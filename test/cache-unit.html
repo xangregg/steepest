@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>cache.js unit test</title>
+    <style>body { font: 18px system-ui, sans-serif; padding: 16px; } #out { font-weight: 700; white-space: pre-line; }</style>
+</head>
+<body>
+<div id="out">running…</div>
+<!-- Hold the load event open so headless Chrome's screenshot waits for the
+     async test to finish (see cache.html). -->
+<img src="http://localhost:8124/hang.png" alt="" width="1" height="1">
+<script type="module">
+    import { searchKey, cacheGet, cachePut } from '../cache.js';
+
+    const out = [];
+    const check = (cond, msg) => out.push(`${cond ? 'ok' : 'FAIL'}: ${msg}`);
+
+    const roads = [{
+        id: 1, name: 'Test St', unnamed: false,
+        samples: [{ lat: 35.1, lon: -82.7, d: 0 }, { lat: 35.101, lon: -82.7, d: 111 }],
+        elev: [700, 711], length: 111, eMin: 700, eMax: 711,
+    }];
+    const key = searchKey({ lat: 35.1004, lon: -82.7001 }, 3000);
+    check(key === '35.100,-82.700,3000', `searchKey rounds: ${key}`);
+    check(searchKey({ lat: 35.1004, lon: -82.7001 }, 3000) === searchKey({ lat: 35.1001, lon: -82.6999, label: 'x' }, 3000),
+        'nearby centers share a key');
+
+    await cachePut(key, roads);
+    const hit = await cacheGet(key);
+    check(!!hit, 'get after put hits');
+    check(hit && Date.now() - hit.t < 5000, 'timestamp is fresh');
+    check(hit?.roads?.length === 1 && hit.roads[0].name === 'Test St', 'payload survives');
+    check(hit?.roads?.[0].samples[1].d === 111 && hit.roads[0].elev[1] === 711, 'nested arrays survive');
+    const miss = await cacheGet(searchKey({ lat: 35.1, lon: -82.7 }, 9999));
+    check(miss === null, 'different radius misses');
+
+    const failures = out.filter(l => l.startsWith('FAIL')).length;
+    document.getElementById('out').textContent =
+        (failures ? `FAILED (${failures})\n` : 'PASS\n') + out.join('\n');
+</script>
+</body>
+</html>

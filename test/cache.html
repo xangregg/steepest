@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>cache round-trip test</title>
+    <style>
+        body { margin: 0; font: 16px system-ui, sans-serif; }
+        #result { padding: 12px; font-size: 22px; font-weight: 700; background: #eee; }
+        iframe { width: 100%; height: 80vh; border: 0; }
+    </style>
+</head>
+<body>
+<div id="result">phase 1: first load (network)…</div>
+<iframe id="f" src="../index.html#q=Brevard%2C+NC&r=3&w=100&min=200"></iframe>
+<!-- Points at a never-responding socket to hold this page's load event open,
+     so headless Chrome's - -screenshot waits for - -timeout instead of firing
+     at load. Harmless in a normal browser tab (one pending request). -->
+<img src="http://localhost:8124/hang.png" alt="" width="1" height="1">
+<script>
+    // Loads the app, waits for a full network run, reloads the iframe, and
+    // reports whether the second load was served from the IndexedDB cache.
+    const f = document.getElementById('f');
+    const result = document.getElementById('result');
+    let phase = 1;
+    const timer = setInterval(() => {
+        const st = f.contentDocument?.getElementById('status')?.textContent ?? '';
+        if (phase === 1 && st.startsWith('Done.')) {
+            phase = 2;
+            result.textContent = 'phase 2: reloading…';
+            f.contentWindow.location.reload();
+        } else if (phase === 2 && st.includes('cached')) {
+            result.textContent = 'CACHE HIT — ' + st;
+            clearInterval(timer);
+        } else if (phase === 2 && st.startsWith('Done.')) {
+            result.textContent = 'CACHE MISS — ' + st;
+            clearInterval(timer);
+        }
+    }, 400);
+</script>
+</body>
+</html>

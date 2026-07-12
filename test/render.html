@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>segment-coloring render test</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+    <link rel="stylesheet" href="../style.css">
+    <style>main { height: 90vh; } body > p { margin: 8px 14px; font: 14px system-ui, sans-serif; }</style>
+</head>
+<body>
+<p>Synthetic roads, sustained 100 m, with climb paint applied: each should fade
+    light→dark with its own hills (flat-then-steep, rollercoaster, uniform, stepped).
+    The stepped road's mid-climb flat must stay colored (climb paint), while its
+    tail past the climb stays bare. Top list: sustained grade; bottom: hardest climb.</p>
+<main>
+    <div id="map"></div>
+    <aside id="sidebar"><div id="road-list"></div><hr><div id="climb-list"></div></aside>
+</main>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script type="module">
+    import { resample, analyzeRoad, segmentSustained, hardestClimb } from '../metrics.js';
+    import { initMap, drawRoads, renderList } from '../render.js';
+
+    // Straight north-south roads near Brevard, ~1 km each, with hand-built
+    // elevation profiles.
+    const mkRoad = (name, lonOffset, elevFn) => {
+        const samples = resample([{ lat: 35.23, lon: -82.74 + lonOffset }, { lat: 35.239, lon: -82.74 + lonOffset }]);
+        const road = { id: name, name, samples, ...analyzeRoad(samples, samples.map(s => elevFn(s.d))) };
+        road.segs = segmentSustained(samples, road.elev, 100);
+        road.value = road.segs.reduce((m, v) => Math.max(m, v), 0);
+        road.climb = hardestClimb(samples, road.elev);
+        return road;
+    };
+    const roads = [
+        mkRoad('Flat then 20%', 0, d => (d < 500 ? 0 : (d - 500) * 0.20)),
+        mkRoad('Rollercoaster', 0.004, d => 40 * Math.sin(d / 120)),
+        mkRoad('Uniform 8%', 0.008, d => d * 0.08),
+        // 10% for 300 m, flat 100 m, 10% for 300 m, then flat: the winning
+        // climb spans the interior flat (60 m over 700 m beats 30 m over 300 m).
+        mkRoad('Stepped climb', 0.012, d => d < 300 ? d * 0.1 : d < 400 ? 30 : d < 700 ? 30 + (d - 400) * 0.1 : 60),
+        // Up 10%, 75 m crest flat, down 8%, flat tail: the short crest gap
+        // should close with the palest paint; the tail stays bare.
+        mkRoad('Crest', 0.016, d => d < 300 ? d * 0.1 : d < 375 ? 30 : d < 675 ? 30 - (d - 375) * 0.08 : 6),
+    ].sort((a, b) => b.value - a.value);
+    for (const r of roads) {
+        if (!r.climb) continue;
+        const paint = Float64Array.from(r.segs);
+        for (let k = r.climb.i; k < r.climb.j; k++) paint[k] = Math.max(paint[k], r.climb.grade);
+        r.paint = paint;
+    }
+
+    const { map } = initMap(document.getElementById('map'), 'light');
+    const layer = drawRoads(map, roads, 100, 'light', 'climb');
+    map.fitBounds([[35.229, -82.742], [35.240, -82.722]]);
+    // Pre-highlight one road so a screenshot shows the hover state: the climb
+    // (upper wall) thickens, the rest dims, and the gray full-road skeleton
+    // appears across the unpainted flat half.
+    layer.highlight(roads.find(r => r.name === 'Flat then 20%'), true);
+    renderList(document.getElementById('road-list'), roads, 'light', {
+        onHover: (r, on) => layer.highlight(r, on),
+        onClick: r => layer.focus(r),
+    });
+    const byClimb = roads.filter(r => r.climb).sort((a, b) => b.climb.score - a.climb.score);
+    renderList(document.getElementById('climb-list'), byClimb, 'light', {
+        rankMode: 'climb',
+        onHover: (r, on) => layer.highlight(r, on),
+        onClick: r => layer.focus(r),
+    });
+</script>
+</body>
+</html>

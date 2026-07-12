@@ -1,0 +1,167 @@
+// Geometry resampling and the sustained-grade steepness metric.
+
+export const SAMPLE_STEP = 25;      // m between elevation samples along a road
+
+export function haversine(a, b) {
+    const R = 6371000, toR = Math.PI / 180;
+    const dLat = (b.lat - a.lat) * toR, dLon = (b.lon - a.lon) * toR;
+    const la1 = a.lat * toR, la2 = b.lat * toR;
+    const h = Math.sin(dLat / 2) ** 2 + Math.cos(la1) * Math.cos(la2) * Math.sin(dLon / 2) ** 2;
+    return 2 * R * Math.asin(Math.sqrt(h));
+}
+
+// Polyline -> evenly spaced samples [{lat, lon, d}] (~step m apart, endpoints
+// included). Even spacing keeps the elevation smoothing well-behaved and never
+// drops the rise across short OSM segments. A sample inside a bridge/tunnel
+// segment (both endpoints flagged b) inherits the flag, so its DEM elevation
+// can be replaced later.
+export function resample(pts, step = SAMPLE_STEP) {
+    const cum = [0];
+    for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + haversine(pts[i - 1], pts[i]));
+    const total = cum[cum.length - 1];
+    if (total === 0) return [{ ...pts[0], d: 0 }];
+    const bridgeSeg = s => !!(pts[s].b && pts[s + 1].b);
+    const nSeg = Math.max(1, Math.round(total / step));
+    const actual = total / nSeg;
+    const out = [{ lat: pts[0].lat, lon: pts[0].lon, d: 0, ...(bridgeSeg(0) && { b: true }) }];
+    let seg = 1;
+    for (let k = 1; k <= nSeg; k++) {
+        const target = k * actual;
+        while (seg < cum.length - 1 && cum[seg] < target) seg++;
+        const span = cum[seg] - cum[seg - 1];
+        const f = span > 0 ? (target - cum[seg - 1]) / span : 0;
+        out.push({
+            lat: pts[seg - 1].lat + (pts[seg].lat - pts[seg - 1].lat) * f,
+            lon: pts[seg - 1].lon + (pts[seg].lon - pts[seg - 1].lon) * f,
+            d: target,
+            ...(bridgeSeg(seg - 1) && { b: true }),
+        });
+    }
+    return out;
+}
+
+// Bridge/tunnel samples carry the terrain's elevation (the gorge under the
+// span, the hill over the bore), not the roadway's. Replace each flagged run
+// with a straight-line deck between the solid ground on either side.
+function deckElevations(samples, elevs) {
+    const n = samples.length;
+    const out = Array.from(elevs);
+    let i = 0;
+    while (i < n) {
+        if (!samples[i].b) { i++; continue; }
+        let z = i;
+        while (z + 1 < n && samples[z + 1].b) z++;
+        const a = i - 1, w = z + 1;
+        if (a >= 0 && w < n) {
+            const d0 = samples[a].d, span = samples[w].d - d0;
+            for (let k = i; k <= z; k++) {
+                const f = span > 0 ? (samples[k].d - d0) / span : 0;
+                out[k] = elevs[a] + (elevs[w] - elevs[a]) * f;
+            }
+        } else if (a >= 0) {
+            for (let k = i; k <= z; k++) out[k] = elevs[a];      // bridge at road end
+        } else if (w < n) {
+            for (let k = i; k <= z; k++) out[k] = elevs[w];      // bridge at road start
+        }
+        i = z + 1;
+    }
+    return out;
+}
+
+// 3-point moving average to tame elevation-model jitter.
+function smooth(elevs) {
+    return elevs.map((e, i) => {
+        const a = elevs[Math.max(0, i - 1)], c = elevs[Math.min(elevs.length - 1, i + 1)];
+        return (a + e + c) / 3;
+    });
+}
+
+// samples + raw elevations -> per-road basics, keeping the smoothed elevation
+// profile so sustainedGrade() can be re-queried cheaply for any window length.
+export function analyzeRoad(samples, elevs) {
+    const elev = smooth(deckElevations(samples, elevs));
+    let eMin = Infinity, eMax = -Infinity;
+    for (const v of elev) { eMin = Math.min(eMin, v); eMax = Math.max(eMax, v); }
+    return { elev, length: samples[samples.length - 1].d, eMin, eMax };
+}
+
+// Per-segment sustained grades: for each ~SAMPLE_STEP segment, the grade of
+// the steepest window of >= windowM meters that contains it. Returns a
+// Float64Array of samples.length - 1 values, or null when the road is shorter
+// than the window (the metric is undefined there). windowM = SAMPLE_STEP
+// degenerates to per-segment grades.
+export function segmentSustained(samples, elev, windowM) {
+    const n = samples.length;
+    if (n < 2 || samples[n - 1].d < windowM) return null;
+    const vals = new Float64Array(n - 1);
+    let j = 0;
+    for (let i = 0; i < n - 1; i++) {
+        if (j <= i) j = i + 1;
+        while (j < n - 1 && samples[j].d - samples[i].d < windowM) j++;
+        const span = samples[j].d - samples[i].d;
+        if (span < windowM) break; // remaining starts only get shorter windows
+        const g = Math.abs(elev[j] - elev[i]) / span;
+        for (let k = i; k < j; k++) if (g > vals[k]) vals[k] = g;
+    }
+    return vals;
+}
+
+// Best average grade held over any stretch of at least windowM meters — the
+// road's ranking value, i.e. the max of its per-segment values.
+export function sustainedGrade(samples, elev, windowM) {
+    const segs = segmentSustained(samples, elev, windowM);
+    return segs ? segs.reduce((m, v) => Math.max(m, v), 0) : null;
+}
+
+const DIP_ABS = 2;       // m of counter-slope always forgiven (DEM noise)
+const DIP_FRAC = 0.10;   // ... or up to this fraction of the total ascent
+const TRIM_KEEP = 0.95;  // report the shortest interval keeping this share of the best score
+
+// Hardest climb on the road, in either travel direction: the interval whose
+// score = gain²/length (== gain × average grade, FIETS-style) is highest,
+// considering only intervals that are genuine climbs — interior descent, as
+// experienced by the traveler, at most max(DIP_ABS, DIP_FRAC × ascent).
+// The reported interval is then tightened to the shortest one keeping
+// TRIM_KEEP of the best score, so a gently rising monotonic approach that
+// barely moves the score doesn't pad the climb's extent.
+// Exact search over all sample pairs; roads are a few hundred samples at most,
+// and the result is memoized per road. Returns {score, gain, span, grade, i,
+// j, dir} or null for a road with no meaningful climb.
+export function hardestClimb(samples, elev) {
+    const n = samples.length;
+    if (n < 2) return null;
+    const up = new Float64Array(n), down = new Float64Array(n);
+    for (let k = 1; k < n; k++) {
+        const de = elev[k] - elev[k - 1];
+        up[k] = up[k - 1] + Math.max(0, de);
+        down[k] = down[k - 1] + Math.max(0, -de);
+    }
+    // net > 0: climb traveling forward, counter-slope is forward descent.
+    // net < 0: climb traveling backward, counter-slope is forward ascent.
+    const evalPair = (i, j) => {
+        const net = elev[j] - elev[i];
+        if (net === 0) return null;
+        const gain = Math.abs(net);
+        const counter = net > 0 ? down[j] - down[i] : up[j] - up[i];
+        if (counter > Math.max(DIP_ABS, DIP_FRAC * (gain + counter))) return null;
+        const span = samples[j].d - samples[i].d;
+        return { score: (gain * gain) / span, gain, span, grade: gain / span, i, j, dir: Math.sign(net) };
+    };
+    let best = null;
+    for (let i = 0; i < n - 1; i++) {
+        for (let j = i + 1; j < n; j++) {
+            const c = evalPair(i, j);
+            if (c && (!best || c.score > best.score)) best = c;
+        }
+    }
+    if (!best || best.gain < DIP_ABS) return null;
+    let tight = best;
+    const floor = TRIM_KEEP * best.score;
+    for (let i = 0; i < n - 1; i++) {
+        for (let j = i + 1; j < n; j++) {
+            const c = evalPair(i, j);
+            if (c && c.score >= floor && c.span < tight.span) tight = c;
+        }
+    }
+    return tight;
+}

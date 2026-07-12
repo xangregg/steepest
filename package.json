@@ -1,0 +1,14 @@
+{
+  "name": "steepest",
+  "version": "1.0.0",
+  "description": "What's the steepest road in town? Static web app using OpenStreetMap + AWS terrain tiles.",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "python3 -m http.server 8080",
+    "test": "node test/pipeline.test.mjs"
+  },
+  "devDependencies": {
+    "pngjs": "^7.0.0"
+  }
+}
