@@ -113,23 +113,27 @@ export function analyzeRoad(samples, elevs) {
 }
 
 // Per-segment sustained grades: for each ~SAMPLE_STEP segment, the grade of
-// the steepest window of >= windowM meters that contains it. Returns a
-// Float64Array of samples.length - 1 values, or null when the road is shorter
-// than the window (the metric is undefined there). windowM = SAMPLE_STEP
-// degenerates to per-segment grades.
+// the steepest ~windowM window that contains it. Length thresholds snap to
+// the nearest whole segment (accept within half a sample step): a road whose
+// spacing divides to 24.9 m gets a 249 m "250 m" window instead of being
+// forced to 274 m, so effective windows stay symmetric around the nominal
+// across roads. Returns a Float64Array of samples.length - 1 values, or null
+// when the road is shorter than the window (the metric is undefined there).
+// windowM = SAMPLE_STEP degenerates to per-segment grades.
 export function segmentSustained(samples, elev, windowM) {
     const n = samples.length;
-    if (n < 2 || samples[n - 1].d < windowM)
+    const bound = windowM - SAMPLE_STEP / 2;
+    if (n < 2 || samples[n - 1].d < bound)
         return null;
     const vals = new Float64Array(n - 1);
     let j = 0;
     for (let i = 0; i < n - 1; i++) {
         if (j <= i)
             j = i + 1;
-        while (j < n - 1 && samples[j].d - samples[i].d < windowM)
+        while (j < n - 1 && samples[j].d - samples[i].d < bound)
             j++;
         const span = samples[j].d - samples[i].d;
-        if (span < windowM)
+        if (span < bound)
             break; // remaining starts only get shorter windows
         const g = Math.abs(elev[j] - elev[i]) / span;
         for (let k = i; k < j; k++)
@@ -157,7 +161,9 @@ export const GRIND_MIN_GRADE = 0.02; // a long grind counts from this average gr
 // qualifies.
 export function grindMask(samples, elev, minSpan) {
     const n = samples.length;
-    if (n < 2 || samples[n - 1].d < minSpan)
+    // Snap to the nearest whole segment, like segmentSustained.
+    const bound = minSpan - SAMPLE_STEP / 2;
+    if (n < 2 || samples[n - 1].d < bound)
         return null;
     const up = new Float64Array(n), down = new Float64Array(n);
     for (let k = 1; k < n; k++) {
@@ -170,7 +176,7 @@ export function grindMask(samples, elev, minSpan) {
     for (let i = 0; i < n - 1; i++) {
         for (let j = i + 1; j < n; j++) {
             const span = samples[j].d - samples[i].d;
-            if (span < minSpan)
+            if (span < bound)
                 continue;
             const net = elev[j] - elev[i];
             const gain = Math.abs(net);

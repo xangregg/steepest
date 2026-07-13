@@ -98,10 +98,11 @@ async function run(refresh = false) {
         }
 
         state = { roads, center, radiusM, label: center.label, cachedAt: null };
-        // Cache only what rendering needs (drop the raw OSM polylines). Awaited
-        // so closing the tab right after results appear can't lose the write.
-        await cachePut(key, roads.map(({ id, name, unnamed, samples, elev, length, eMin, eMax }) =>
-            ({ id, name, unnamed, samples, elev, length, eMin, eMax })));
+        // Cache only what rendering needs (pts kept: ribbons densify through
+        // the full-resolution geometry on hairpins). Awaited so closing the
+        // tab right after results appear can't lose the write.
+        await cachePut(key, roads.map(({ id, name, unnamed, pts, samples, elev, length, eMin, eMax }) =>
+            ({ id, name, unnamed, pts, samples, elev, length, eMin, eMax })));
         map.fitBounds(L.latLng(center.lat, center.lon).toBounds(radiusM * 2));
         updateHash(query);
         render();

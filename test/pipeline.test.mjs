@@ -88,6 +88,20 @@ assert(hillSegs[2] < 0.03 && hillSegs[hillSegs.length - 3] > 0.17,
 assert(Math.abs(Math.max(...hillSegs) - sustainedGrade(flat, analyzeRoad(flat, hill).elev, 100)) < 1e-12,
     'max of segment values equals road ranking value');
 
+// Length thresholds snap to the nearest whole segment: a 10-segment run
+// summing 249 m counts for a 250 m window (the alternative is a 274 m window
+// that would dilute the value).
+const short = resample([{ lat: 35, lon: -82.5 }, { lat: 35.00896, lon: -82.5 }]); // ~996 m -> 24.9 m spacing
+const spacing = short[1].d - short[0].d;
+assert(spacing < 25, `sub-25 spacing road built (${spacing.toFixed(2)} m)`);
+// Mid-road 10% climb spanning exactly 10 segments (~249 m), flat either side.
+const climbElev = analyzeRoad(short, short.map(s =>
+    Math.max(0, Math.min(s.d - 10 * spacing, 10 * spacing)) * 0.10)).elev;
+const snap = sustainedGrade(short, climbElev, 250);
+const forced = sustainedGrade(short, climbElev, 275);
+assert(snap > forced + 0.004,
+    `249 m run counts for the 250 m window: ${(snap * 100).toFixed(2)}% vs ${(forced * 100).toFixed(2)}% at 275 m`);
+
 // Hardest-climb metric: same gain, half the distance -> roughly double score.
 const mkElev = fn => analyzeRoad(flat, flat.map(s => fn(s.d))).elev;
 const cLong = hardestClimb(flat, mkElev(d => d * 0.05));
