@@ -53,8 +53,8 @@ no database, so it hosts happily on GitHub Pages.
    highlight at all — so the map shows where the hills are, and a long road
    fades in and out with its actual climbs instead of wearing its single best
    grade everywhere. Long inclines — stretches of at least 4× the min length,
-   mostly monotonic, averaging ≥ 2 % — are drawn as a continuous medium-gray
-   underlay beneath the steepness ribbons, so a mile-long 2.5 % incline is
+   mostly monotonic, averaging ≥ 2 % — are drawn as a continuous translucent
+   amber underlay beneath the steepness ribbons, so a mile-long 2.5 % incline is
    acknowledged instead of invisible; its width flare accumulates over the
    whole incline, unbroken by whatever steep colors sit on top. In
    hardest-climb mode, the listed (top-25) roads' climbs wear the red ramp

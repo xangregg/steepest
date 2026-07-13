@@ -58,6 +58,10 @@
         // underlay must run continuously beneath the steep overlay, its width
         // flare unbroken.
         mkRoad('Grind + pitch', 0.02, d => d < 400 ? d * 0.025 : d < 600 ? 10 + (d - 400) * 0.08 : 26 + (d - 600) * 0.025),
+        // Parallel to Grind + pitch ~5 m away (a dual-carriageway stand-in):
+        // where the two amber incline ribbons overlap, the tone must not
+        // darken (pane-level opacity fades the union once).
+        mkRoad('Grind twin', 0.02005, d => d * 0.025),
         // Crosses the Grind + pitch road: its steep color must render on top
         // of the other road's gray grind underlay even though it ranks lower
         // (all grinds draw in one pass beneath all steep ribbons).

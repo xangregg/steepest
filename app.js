@@ -5,7 +5,7 @@
 import { parseLatLon, geocode, fetchRoads, prepareRoads } from './roads.js';
 import { elevatePoints } from './elevation.js';
 import { resample, analyzeRoad, segmentSustained, hardestClimb, grindMask, SAMPLE_STEP } from './metrics.js';
-import { initMap, drawRoads, renderList } from './render.js';
+import { initMap, drawRoads, renderList, setGrindStyle } from './render.js';
 import { searchKey, cacheGet, cachePut } from './cache.js';
 
 const byId = id => document.getElementById(id);
@@ -252,6 +252,16 @@ darkQuery.addEventListener('change', () => {
     setMode(mode());
     render();
 });
+
+// Dev-tools hook for live style experiments (re-renders from cached data):
+//   steepest.grind({ light: '#8a93a5', opacity: 0.4 })
+//   steepest.grind({ dark: '#5f6a78' })
+window.steepest = {
+    grind(opts) {
+        setGrindStyle(opts);
+        render();
+    },
+};
 
 // Restore a shared/bookmarked search from the URL hash.
 const params = new URLSearchParams(location.hash.slice(1));

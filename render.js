@@ -21,12 +21,25 @@ export const RAMPS_ALT = {
     dark: ['#332057', '#452e85', '#5940a3', '#7657c4', '#9273d8', '#b096e5', '#d3c3f2'],
 };
 
-// Categorical (non-gradient) color for "grind" stretches — long, mostly
-// monotonic inclines of >= 2%. Drawn as a continuous underlay beneath the
-// steepness ribbons: a quiet medium gray, mostly obscured where steep colors
-// sit on top, peeking out where the grind ribbon runs wider.
-export const GRIND_COLORS = { light: '#9b9b93', dark: '#75756d' };
-const GRIND_OPACITY = 0.55; // translucent: lighter, and the basemap shows through
+// Categorical (non-gradient) color for long-incline stretches — mostly
+// monotonic inclines of >= 2%. Drawn as a continuous translucent amber
+// underlay beneath the steepness ribbons, mostly obscured where steep colors
+// sit on top, peeking out where the incline ribbon runs wider.
+export const GRIND_COLORS = { light: '#dd9922', dark: '#e9b04a' };
+// Applied as CSS opacity on the inclines pane (not per polygon), so
+// overlapping ribbons — parallel carriageways, crossing inclines — merge into
+// one solid shape before the fade and never double-darken.
+let GRIND_OPACITY = 0.4;
+
+// Live style experimentation (see the window.steepest dev hook in app.js).
+export function setGrindStyle({ light, dark, opacity } = {}) {
+    if (light)
+        GRIND_COLORS.light = light;
+    if (dark)
+        GRIND_COLORS.dark = dark;
+    if (opacity !== undefined)
+        GRIND_OPACITY = opacity;
+}
 
 const BASEMAPS = {
     light: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
@@ -293,10 +306,13 @@ function ribbonRing(geom, verts, iStart, iEnd, widthAt) {
 export function drawRoads(map, ranked, windowM, mode, rankMode = 'sustained') {
     const color = makeGradeColor(RAMPS[mode]);
     const colorAlt = makeGradeColor(RAMPS_ALT[mode]);
-    // Two passes: every grind underlay draws before any steep ribbon, so a
-    // later road's translucent gray can never sit on another road's colors
-    // where streets cross. Both groups go on the map only after population,
-    // preserving that global order in the canvas renderer.
+    // Incline underlays live in their own pane just below the overlay pane:
+    // structurally beneath every steep ribbon, drawn opaque, faded once via
+    // the pane's CSS opacity.
+    if (!map.getPane('inclines'))
+        map.createPane('inclines').style.zIndex = 399;
+    map.getPane('inclines').style.opacity = GRIND_OPACITY;
+    map._inclineRenderer ??= L.canvas({ pane: 'inclines', padding: 0.3 });
     const underlay = L.layerGroup();
     const group = L.layerGroup();
     const lines = new Map(); // road -> { skeleton, chunks:[{line, inClimb}], steepest, steepestClimb }
@@ -310,8 +326,8 @@ export function drawRoads(map, ranked, windowM, mode, rankMode = 'sustained') {
         const emphasizeClimb = isClimbMode && road.climb;
         for (const { poly, inClimb, isGrind } of e.chunks) {
             if (isGrind) {
-                // Grinds stay translucent; hover just fattens their outline.
-                poly.setStyle({ opacity: on ? GRIND_OPACITY : 0, fillOpacity: GRIND_OPACITY });
+                // Hover fattens the outline; the pane keeps it translucent.
+                poly.setStyle({ opacity: on ? 1 : 0, fillOpacity: 1 });
             }
             else if (emphasizeClimb && !inClimb) {
                 poly.setStyle({ opacity: 0, fillOpacity: on ? 0.45 : 1 });
@@ -361,7 +377,9 @@ export function drawRoads(map, ranked, windowM, mode, rankMode = 'sustained') {
                     const widthAt = widthFor(halfAt);
                     const iStart = dp.sampleIdx[kStart], iEnd = dp.sampleIdx[kEnd];
                     const poly = L.polygon(ribbonRing(geom, dp.verts, iStart, iEnd, widthAt), {
-                        fillColor: c, fillOpacity: GRIND_OPACITY,
+                        pane: 'inclines', renderer: map._inclineRenderer,
+                        // Opaque within the pane; the pane itself is faded.
+                        fillColor: c, fillOpacity: 1,
                         stroke: true, color: c, weight: LINE_WEIGHT, opacity: 0,
                     });
                     poly.on('click', e => { clickK = nearestSegIndex(road, e.latlng); });
