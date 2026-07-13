@@ -9,12 +9,12 @@ import { initMap, drawRoads, renderList } from './render.js';
 import { searchKey, cacheGet, cachePut } from './cache.js';
 
 const LIST_MAX = 25;
-const $ = id => document.getElementById(id);
+const byId = id => document.getElementById(id);
 
 const darkQuery = window.matchMedia('(prefers-color-scheme: dark)');
 const mode = () => (darkQuery.matches ? 'dark' : 'light');
 
-const { map, setMode, updateLegend } = initMap($('map'), mode());
+const { map, setMode, updateLegend } = initMap(byId('map'), mode());
 
 let state = null;   // { roads, center, radiusM, label } after a successful run
 let layer = null;   // drawRoads handle
@@ -23,22 +23,22 @@ let abort = null;
 // progress: undefined hides the bar, null shows an indeterminate sweep, a
 // number in [0,1] shows a determinate fill.
 function status(msg, { error = false, progress } = {}) {
-    $('status').textContent = msg;
-    $('status').classList.toggle('error', error);
-    const bar = $('progress');
+    byId('status').textContent = msg;
+    byId('status').classList.toggle('error', error);
+    const bar = byId('progress');
     bar.classList.toggle('active', progress !== undefined);
     bar.classList.toggle('indeterminate', progress === null);
-    $('progress-fill').style.width = typeof progress === 'number' ? `${Math.round(progress * 100)}%` : '';
+    byId('progress-fill').style.width = typeof progress === 'number' ? `${Math.round(progress * 100)}%` : '';
 }
 
 async function run(refresh = false) {
     abort?.abort();
     const ctl = new AbortController();
     abort = ctl;
-    $('go').disabled = true;
+    byId('go').disabled = true;
     try {
-        const query = $('place').value.trim();
-        const radiusM = Math.min(15, Math.max(1, +$('radius').value || 6)) * 1000;
+        const query = byId('place').value.trim();
+        const radiusM = Math.min(15, Math.max(1, +byId('radius').value || 6)) * 1000;
 
         status('Locating…');
         const center = parseLatLon(query) ?? await geocode(query, ctl.signal);
@@ -113,7 +113,7 @@ async function run(refresh = false) {
     finally {
         if (abort === ctl) {
             abort = null;
-            $('go').disabled = false;
+            byId('go').disabled = false;
         }
     }
 }
@@ -123,9 +123,9 @@ async function run(refresh = false) {
 function render() {
     if (!state)
         return;
-    const windowM = Math.max(SAMPLE_STEP, +$('window').value || 250);
-    const minLen = Math.max(0, +$('minlen').value || 0);
-    const rankMode = $('rankmode').value;
+    const windowM = Math.max(SAMPLE_STEP, +byId('window').value || 250);
+    const minLen = Math.max(0, +byId('minlen').value || 0);
+    const rankMode = byId('rankmode').value;
     let ranked = state.roads
         .map(r => {
             r.segs = segmentSustained(r.samples, r.elev, windowM);
@@ -179,16 +179,16 @@ function render() {
         if (top.length >= LIST_MAX)
             break;
     }
-    renderList($('road-list'), top, mode(), {
+    renderList(byId('road-list'), top, mode(), {
         rankMode,
         onHover: (road, on) => layer.highlight(road, on),
         onClick: road => layer.focus(road),
     });
 
-    $('list-title').textContent = rankMode === 'climb'
+    byId('list-title').textContent = rankMode === 'climb'
         ? 'Hardest climbs — gain × grade'
         : `Steepest roads — sustained ${windowM} m`;
-    $('list-sub').textContent = `${state.label} · ${ranked.length.toLocaleString()} roads ≥ ${Math.max(minLen, windowM)} m`;
+    byId('list-sub').textContent = `${state.label} · ${ranked.length.toLocaleString()} roads ≥ ${Math.max(minLen, windowM)} m`;
 
     const doneMsg = `${ranked.length.toLocaleString()} roads ranked within ${(state.radiusM / 1000).toFixed(1)} km.`;
     if (state.cachedAt) {
@@ -197,8 +197,8 @@ function render() {
         b.type = 'button';
         b.className = 'linklike';
         b.textContent = 'refresh from OSM';
-        b.addEventListener('click', () => run(true));
-        $('status').append(b);
+        b.addEventListener('click', () => void run(true));
+        byId('status').append(b);
     }
     else {
         status(`Done. ${doneMsg}`);
@@ -218,26 +218,26 @@ function ago(t) {
 function updateHash(query) {
     const p = new URLSearchParams({
         q: query,
-        r: String(+$('radius').value),
-        w: String(+$('window').value),
-        min: String(+$('minlen').value),
-        mode: $('rankmode').value,
+        r: String(+byId('radius').value),
+        w: String(+byId('window').value),
+        min: String(+byId('minlen').value),
+        mode: byId('rankmode').value,
     });
     history.replaceState(null, '', '#' + p.toString());
 }
 
-$('controls').addEventListener('submit', e => {
+byId('controls').addEventListener('submit', e => {
     e.preventDefault();
-    run();
+    void run();
 });
 const onControlChange = () => {
     render();
     if (state)
-        updateHash($('place').value.trim());
+        updateHash(byId('place').value.trim());
 };
-$('window').addEventListener('change', onControlChange);
-$('minlen').addEventListener('change', onControlChange);
-$('rankmode').addEventListener('change', onControlChange);
+byId('window').addEventListener('change', onControlChange);
+byId('minlen').addEventListener('change', onControlChange);
+byId('rankmode').addEventListener('change', onControlChange);
 darkQuery.addEventListener('change', () => {
     setMode(mode());
     render();
@@ -246,16 +246,16 @@ darkQuery.addEventListener('change', () => {
 // Restore a shared/bookmarked search from the URL hash.
 const params = new URLSearchParams(location.hash.slice(1));
 if (params.get('q')) {
-    $('place').value = params.get('q');
+    byId('place').value = params.get('q');
     if (params.get('r'))
-        $('radius').value = params.get('r');
+        byId('radius').value = params.get('r');
     if (params.get('w'))
-        $('window').value = params.get('w');
+        byId('window').value = params.get('w');
     if (params.get('min'))
-        $('minlen').value = params.get('min');
+        byId('minlen').value = params.get('min');
     if (['sustained', 'climb'].includes(params.get('mode')))
-        $('rankmode').value = params.get('mode');
-    run();
+        byId('rankmode').value = params.get('mode');
+    void run();
 }
 else {
     status('Enter a town (e.g. “Pittsburgh, PA”) or coordinates, then hit the button.');
