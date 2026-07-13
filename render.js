@@ -10,6 +10,15 @@ export const RAMPS = {
     dark: ['#4a1210', '#7a1414', '#a02020', '#c22d2c', '#e34948', '#f07f79', '#f9b2ad'],
 };
 
+// Second sequential context (climb mode's "steep but not the hardest climb"):
+// its own single-hue ramp over the same 5–25 % domain. Violet reads clearly
+// against the gray basemap (cyan sank into it), stays well away from the climb
+// reds, and the hue pair survives red-green color-vision deficiency.
+export const RAMPS_ALT = {
+    light: ['#e4d9f7', '#cbb8ef', '#b096e5', '#9273d8', '#7657c4', '#5d41a6', '#452e85'],
+    dark: ['#332057', '#452e85', '#5940a3', '#7657c4', '#9273d8', '#b096e5', '#d3c3f2'],
+};
+
 const BASEMAPS = {
     light: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
     dark: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
@@ -39,38 +48,67 @@ export function initMap(el, mode) {
     };
     setBase(mode);
 
+    let legendDiv = null;
     const legend = L.control({ position: 'bottomright' });
-    legend.onAdd = () => {
-        const div = L.DomUtil.create('div', 'legend');
-        div.innerHTML = `<div class="legend-title">grade</div>
-            <div class="legend-bar"></div>
-            <div class="legend-ticks"><span>${Math.round(GRADE_MIN * 100)}%</span><span>${+((GRADE_MIN + GRADE_MAX) * 50).toFixed(1)}%</span><span>${Math.round(GRADE_MAX * 100)}%+</span></div>`;
-        return div;
-    };
+    legend.onAdd = () => (legendDiv = L.DomUtil.create('div', 'legend'));
     legend.addTo(map);
 
-    const setLegendRamp = m => {
-        const bar = map.getContainer().querySelector('.legend-bar');
-        if (bar) bar.style.background = `linear-gradient(to right, ${RAMPS[m].join(',')})`;
+    const barDiv = ramp => `<div class="legend-bar" style="background:linear-gradient(to right, ${ramp.join(',')})"></div>`;
+    const ticks = `<div class="legend-ticks"><span>${Math.round(GRADE_MIN * 100)}%</span><span>${+((GRADE_MIN + GRADE_MAX) * 50).toFixed(1)}%</span><span>${Math.round(GRADE_MAX * 100)}%+</span></div>`;
+    const updateLegend = (m, rankMode = 'sustained') => {
+        legendDiv.innerHTML = rankMode === 'climb'
+            ? `<div class="legend-title">grade</div>
+               <div class="legend-row">${barDiv(RAMPS[m])}<span class="legend-label">hardest climb</span></div>
+               <div class="legend-row">${barDiv(RAMPS_ALT[m])}<span class="legend-label">other steep</span></div>
+               ${ticks}`
+            : `<div class="legend-title">grade</div>${barDiv(RAMPS[m])}${ticks}`;
     };
-    setLegendRamp(mode);
+    updateLegend(mode);
 
-    return { map, setMode: m => { setBase(m); setLegendRamp(m); } };
+    return { map, setMode: setBase, updateLegend };
 }
 
 const fmtPct = g => `${(g * 100).toFixed(1)}%`;
 const fmtLen = m => m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${Math.round(m)} m`;
 const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
-function popupHtml(road, stretchValue, windowM) {
+// segK: index of the ~25 m sample segment nearest the click, when the popup
+// was opened by clicking the map (null when opened from the list).
+function popupHtml(road, stretchValue, windowM, segK) {
     const climbRow = road.climb
         ? `<div class="popup-row"><span>Hardest climb</span><b>↑${Math.round(road.climb.gain)} m @ ${fmtPct(road.climb.grade)} over ${fmtLen(road.climb.span)}</b></div>`
         : '';
-    return `<div class="popup"><div class="popup-name">${esc(road.name)}</div>
+    let localRows;
+    if (segK != null) {
+        const s0 = road.samples[segK], s1 = road.samples[segK + 1];
+        const e0 = road.elev[segK], e1 = road.elev[segK + 1];
+        const g = Math.abs(e1 - e0) / (s1.d - s0.d);
+        localRows = `
+        <div class="popup-row popup-active"><span>This ${Math.round(s1.d - s0.d)} m segment</span><b>${fmtPct(g)} · ${Math.round(e0)}→${Math.round(e1)} m</b></div>
+        <div class="popup-row"><span>Sustained ${windowM} m here</span><b>${fmtPct(road.segs[segK])}</b></div>
+        <div class="popup-row"><span>Along road</span><b>${fmtLen(s0.d)} of ${fmtLen(road.length)}</b></div>`;
+    } else {
+        localRows = `
         <div class="popup-row popup-active"><span>This stretch (sustained ${windowM} m)</span><b>${fmtPct(stretchValue)}</b></div>
+        <div class="popup-row"><span>Length</span><b>${fmtLen(road.length)}</b></div>`;
+    }
+    return `<div class="popup"><div class="popup-name">${esc(road.name)}</div>${localRows}
         <div class="popup-row"><span>Road best</span><b>${fmtPct(road.value)}</b></div>${climbRow}
-        <div class="popup-row"><span>Length</span><b>${fmtLen(road.length)}</b></div>
         <div class="popup-row"><span>Elevation</span><b>${Math.round(road.eMin)}–${Math.round(road.eMax)} m</b></div></div>`;
+}
+
+// Nearest sample segment to a clicked point (planar approximation is plenty
+// at road scale).
+function nearestSegIndex(road, latlng) {
+    const cosLat = Math.cos((latlng.lat * Math.PI) / 180);
+    let best = 0, bestD = Infinity;
+    for (let i = 0; i < road.samples.length; i++) {
+        const s = road.samples[i];
+        const dLat = s.lat - latlng.lat, dLon = (s.lon - latlng.lng) * cosLat;
+        const d2 = dLat * dLat + dLon * dLon;
+        if (d2 < bestD) { bestD = d2; best = i; }
+    }
+    return Math.min(best, road.samples.length - 2);
 }
 
 // Merge consecutive segments that land in the same color bin (~1% grade) into
@@ -82,12 +120,22 @@ function popupHtml(road, stretchValue, windowM) {
 // chunk's reported value stays the honest local grade.
 const BINS = Math.round((GRADE_MAX - GRADE_MIN) * 100); // one bin per % of grade
 const GAP_CLOSE_M = 100; // close sub-GRADE_MIN gaps up to this long (crests, breathers)
-function colorChunks(road) {
-    const { samples, segs } = road;
+const PAINT_LOCAL_CAP = 1.0; // paint never exceeds this × the segment's own local grade
+// splitAt: segment indices where a chunk must break regardless of color bin
+// (climb-interval boundaries, so climb and non-climb hues never share a chunk).
+function colorChunks(road, splitAt) {
+    const { samples, segs, elev } = road;
+    // Paint starts from the sustained-window value (plus the climb floor in
+    // climb mode) but is capped relative to the segment's own grade, so color
+    // doesn't bleed past where a hill really ends.
+    const paint = Float64Array.from(road.paint ?? segs);
+    for (let k = 0; k < paint.length; k++) {
+        const local = Math.abs(elev[k + 1] - elev[k]) / (samples[k + 1].d - samples[k].d);
+        paint[k] = Math.min(paint[k], local * PAINT_LOCAL_CAP);
+    }
     // Close short low-grade runs flanked by painted segments on both sides: a
     // 50 m crest flat shouldn't visually sever one continuous hill. Closed
     // gaps get exactly GRADE_MIN — the ramp's palest step.
-    const paint = Float64Array.from(road.paint ?? segs);
     let gapStart = -1;
     for (let k = 0; k <= paint.length; k++) {
         const low = k < paint.length && paint[k] < GRADE_MIN;
@@ -105,7 +153,7 @@ function colorChunks(road) {
     for (let k = 0; k < segs.length; k++) {
         if (paint[k] < GRADE_MIN) { cur = null; continue; }
         const b = bin(paint[k]);
-        if (!cur || b !== cur.bin) {
+        if (!cur || b !== cur.bin || splitAt?.has(k)) {
             cur = { bin: b, paint: paint[k], value: segs[k], kStart: k, kEnd: k + 1, latlngs: [[samples[k].lat, samples[k].lon]] };
             chunks.push(cur);
         } else {
@@ -126,6 +174,7 @@ function colorChunks(road) {
 // road's extent (including unpainted flats) stays legible.
 export function drawRoads(map, ranked, windowM, mode, rankMode = 'sustained') {
     const color = makeGradeColor(RAMPS[mode]);
+    const colorAlt = makeGradeColor(RAMPS_ALT[mode]);
     const group = L.layerGroup().addTo(map);
     const lines = new Map(); // road -> { skeleton, chunks:[{line, inClimb}], steepest, steepestClimb }
     const isClimbMode = rankMode === 'climb';
@@ -148,14 +197,23 @@ export function drawRoads(map, ranked, windowM, mode, rankMode = 'sustained') {
         }).addTo(fg);
         const chunks = [];
         let steepest = null, steepestClimb = null;
-        for (const chunk of colorChunks(road)) {
+        let clickK = null; // set by a map click just before the bound popup opens
+        const split = isClimbMode && road.climb ? new Set([road.climb.i, road.climb.j]) : null;
+        for (const chunk of colorChunks(road, split)) {
+            const inClimb = isClimbMode && road.climb && chunk.kStart >= road.climb.i && chunk.kStart < road.climb.j;
             const line = L.polyline(chunk.latlngs, {
-                color: color(chunk.paint),
+                color: (isClimbMode && !inClimb ? colorAlt : color)(chunk.paint),
                 weight: 3.5,
                 opacity: 0.9,
-            }).bindPopup(() => popupHtml(road, chunk.value, windowM));
+            });
+            // Registered before bindPopup so it runs first on click.
+            line.on('click', e => { clickK = nearestSegIndex(road, e.latlng); });
+            line.bindPopup(() => {
+                const k = clickK;
+                clickK = null;
+                return popupHtml(road, chunk.value, windowM, k);
+            });
             line.addTo(fg);
-            const inClimb = isClimbMode && road.climb && chunk.kEnd > road.climb.i && chunk.kStart < road.climb.j;
             chunks.push({ line, inClimb });
             if (!steepest || chunk.paint > steepest.chunkPaint) {
                 steepest = line;

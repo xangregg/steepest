@@ -27,13 +27,14 @@ no database, so it hosts happily on GitHub Pages.
    no API key). Elevations get a 3-point moving average to tame DEM noise.
 4. **Metrics** — two ranking modes:
    - **Hardest climb** (default): effort rather than grade — each road's best
-     continuous climb (in either travel direction) scored as gain² / length,
-     i.e. gain × average grade, FIETS-style. Same gain over half the distance
-     scores double. A climb tolerates only small counter-slope (≤ max(2 m, 10 %
-     of ascent)), so a genuine dip ends one climb and starts another; and the
-     reported interval is the shortest one keeping ≥ 95 % of the best score, so
-     a gently rising approach that barely adds difficulty isn't counted as part
-     of the climb.
+     continuous climb (in either travel direction), scored by the **effort
+     integral** Σ segment length × grade², which equals gain × average grade
+     (FIETS-style) on a steady climb: same gain over half the distance scores
+     double, and every stretch of real climbing adds. A climb tolerates only
+     small counter-slope (≤ max(2 m, 10 % of ascent)), so a genuine dip ends
+     one climb and starts another; near-flat tails (< 5 %) aren't part of the
+     climb, while adjacent ≥ 5 % climbing is included even when it's gentler
+     than the core.
    - **Steepest sustained**: the best average grade a road holds over any
      stretch of the chosen length (default 250 m). The length is a numeric
      input: 25 m degenerates to "steepest single segment" (noisy — treat with
@@ -51,9 +52,11 @@ no database, so it hosts happily on GitHub Pages.
    steepest window-length stretch it belongs to, and stretches under 5 % get no
    highlight at all — so the map shows where the hills are, and a long road
    fades in and out with its actual climbs instead of wearing its single best
-   grade everywhere. In hardest-climb mode, a road's winning climb is kept
-   visibly continuous: its segments are colored at least the climb's average
-   grade, so a breather mid-climb doesn't punch a hole in the highlight. The sidebar bar chart shares the ramp and doubles as the ranked
+   grade everywhere. In hardest-climb mode, winning climbs wear the red ramp
+   while other steep stretches switch to a contrasting violet ramp (same 5–25 %
+   scale), so the climbs can be scanned at a glance; a road's winning climb is
+   also kept visibly continuous — its segments are colored at least the climb's
+   average grade, so a breather mid-climb doesn't punch a hole in the highlight. The sidebar bar chart shares the ramp and doubles as the ranked
    list; hover to highlight on the map, click to zoom. Searches are encoded in
    the URL hash, so results are shareable. Light and dark themes follow the OS.
 

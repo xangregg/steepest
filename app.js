@@ -14,7 +14,7 @@ const $ = id => document.getElementById(id);
 const darkQuery = window.matchMedia('(prefers-color-scheme: dark)');
 const mode = () => (darkQuery.matches ? 'dark' : 'light');
 
-const { map, setMode } = initMap($('map'), mode());
+const { map, setMode, updateLegend } = initMap($('map'), mode());
 
 let state = null;   // { roads, center, radiusM, label } after a successful run
 let layer = null;   // drawRoads handle
@@ -117,6 +117,7 @@ function render() {
 
     layer?.remove();
     layer = drawRoads(map, ranked, windowM, mode(), rankMode);
+    updateLegend(mode(), rankMode);
 
     // The list dedupes by name (a road split into disjoint pieces keeps only
     // its steepest piece); the map still shows every piece.

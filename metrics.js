@@ -115,19 +115,23 @@ export function sustainedGrade(samples, elev, windowM) {
 
 const DIP_ABS = 2;       // m of counter-slope always forgiven (DEM noise)
 const DIP_FRAC = 0.10;   // ... or up to this fraction of the total ascent
-const TRIM_KEEP = 0.95;  // report the shortest interval keeping this share of the best score
+const TRIM_KEEP = 0.99;  // report the shortest interval keeping this share of the best score
+const EXT_MIN_GRADE = 0.05; // extend the reported extent over adjacent climbing this steep
 
-// Hardest climb on the road, in either travel direction: the interval whose
-// score = gain²/length (== gain × average grade, FIETS-style) is highest,
-// considering only intervals that are genuine climbs — interior descent, as
-// experienced by the traveler, at most max(DIP_ABS, DIP_FRAC × ascent).
-// The reported interval is then tightened to the shortest one keeping
-// TRIM_KEEP of the best score, so a gently rising monotonic approach that
-// barely moves the score doesn't pad the climb's extent.
+// Hardest climb on the road, in either travel direction. The extent is found
+// by maximizing gain²/length (gain × average grade, FIETS-style) over
+// intervals that are genuine climbs — interior descent, as experienced by the
+// traveler, at most max(DIP_ABS, DIP_FRAC × ascent) — then tightened to the
+// shortest interval keeping TRIM_KEEP of that maximum, then extended over
+// adjacent segments still climbing at >= EXT_MIN_GRADE.
+// The reported score is the effort integral over that extent:
+// Σ segment length × grade², which equals gain²/length on a steady climb but
+// is additive — every stretch of real climbing raises it, so a 5% shoulder
+// counts toward the result instead of "diluting" it.
 // Exact search over all sample pairs; roads are a few hundred samples at most,
 // and the result is memoized per road. Returns {score, gain, span, grade, i,
 // j, dir} or null for a road with no meaningful climb.
-export function hardestClimb(samples, elev) {
+export function hardestClimb(samples, elev, extMinGrade = EXT_MIN_GRADE) {
     const n = samples.length;
     if (n < 2) return null;
     const up = new Float64Array(n), down = new Float64Array(n);
@@ -163,5 +167,23 @@ export function hardestClimb(samples, elev) {
             if (c && c.score >= floor && c.span < tight.span) tight = c;
         }
     }
-    return tight;
+    // gain²/span only admits a tail steeper than half the climb's average, so
+    // a 12% climb would disown a 5% finish. Extend the reported extent over
+    // adjacent segments that still climb at >= EXT_MIN_GRADE in the travel
+    // direction; the score stays the core's (the extension describes extent,
+    // not extra hardness).
+    let { i, j } = tight;
+    const climbGrade = k => ((elev[k + 1] - elev[k]) * tight.dir) / (samples[k + 1].d - samples[k].d);
+    while (j < n - 1 && climbGrade(j) >= extMinGrade) j++;
+    while (i > 0 && climbGrade(i - 1) >= extMinGrade) i--;
+    const gain = Math.abs(elev[j] - elev[i]);
+    const span = samples[j].d - samples[i].d;
+    // Effort integral: climbing segments contribute length × grade²; flats and
+    // tolerated counter-slope inside the extent contribute nothing.
+    let score = 0;
+    for (let k = i; k < j; k++) {
+        const de = (elev[k + 1] - elev[k]) * tight.dir;
+        if (de > 0) score += (de * de) / (samples[k + 1].d - samples[k].d);
+    }
+    return { ...tight, i, j, gain, span, grade: gain / span, score };
 }

@@ -49,13 +49,24 @@
         r.paint = paint;
     }
 
-    const { map } = initMap(document.getElementById('map'), 'light');
+    const { map, updateLegend } = initMap(document.getElementById('map'), 'light');
+    updateLegend('light', 'climb');
     const layer = drawRoads(map, roads, 100, 'light', 'climb');
     map.fitBounds([[35.229, -82.742], [35.240, -82.722]]);
     // Pre-highlight one road so a screenshot shows the hover state: the climb
     // (upper wall) thickens, the rest dims, and the gray full-road skeleton
     // appears across the unpainted flat half.
     layer.highlight(roads.find(r => r.name === 'Flat then 20%'), true);
+    // Simulate a click on the Stepped climb's flat middle (d≈350 m): the popup
+    // must report the honest local segment (~0%) even though the spot wears
+    // the red climb paint.
+    const target = L.latLng(35.23 + 0.009 * 0.35, -82.74 + 0.012);
+    let clicked = false;
+    layer.group.eachLayer(fg => fg.eachLayer(l => {
+        if (clicked || !l.getPopup || !l.getPopup() || !l.getBounds().contains(target)) return;
+        l.fire('click', { latlng: target });
+        clicked = true;
+    }));
     renderList(document.getElementById('road-list'), roads, 'light', {
         onHover: (r, on) => layer.highlight(r, on),
         onClick: r => layer.focus(r),

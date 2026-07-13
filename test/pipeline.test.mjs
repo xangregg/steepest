@@ -71,15 +71,26 @@ const cDip = hardestClimb(flat, dipElev);
 assert(cDip.span < 320, `dip splits the climb (span ${cDip.span.toFixed(0)} m)`);
 assert(hardestClimb(flat, mkElev(d => 100 - d * 0.08)).dir === -1, 'descending road climbs backward');
 assert(hardestClimb(flat, mkElev(() => 100)) === null, 'flat road has no climb');
-// Trim rule: a 5.5% monotonic approach into a 10% wall inflates the best
-// interval to the whole km; the reported interval must give back the weakest
-// part of the approach while keeping >= 95% of the score.
+// Extent rules: adjacent climbing >= 5% belongs to the climb even when the
+// score formula would call it dilution; near-flat monotonic tails do not.
 const diluted = hardestClimb(flat, mkElev(d => d < 500 ? d * 0.055 : 27.5 + (d - 500) * 0.10));
-assert(diluted.span < 950 && diluted.span >= 500,
-    `weak approach trimmed: climb span ${diluted.span.toFixed(0)} m of 1000 m road`);
+assert(diluted.span > 900, `5.5% approach included in extent: span ${diluted.span.toFixed(0)} m of 1000 m road`);
 // A near-flat approach must not be part of the climb at all.
 const flatApproach = hardestClimb(flat, mkElev(d => d < 500 ? d * 0.01 : 5 + (d - 500) * 0.10));
 assert(flatApproach.span < 560, `flat approach excluded: climb span ${flatApproach.span.toFixed(0)} m`);
+// Brookview case: a 5.2% finish above a 12% wall is below the score formula's
+// half-average bar but must still be part of the reported climb.
+const shoulder = hardestClimb(flat, mkElev(d => d < 300 ? d * 0.12 : d < 500 ? 36 + (d - 300) * 0.052 : 46.4));
+assert(shoulder.span > 420 && shoulder.gain > 40,
+    `5% finish included: ↑${shoulder.gain.toFixed(0)} m over ${shoulder.span.toFixed(0)} m`);
+// Effort integral: the shoulder adds to the score (core alone would be ~4.3;
+// the 5.2% shoulder adds ~0.5) instead of diluting it.
+assert(shoulder.score > 4.35 && shoulder.score < 5.2,
+    `shoulder adds effort: score ${shoulder.score.toFixed(2)}`);
+// On a steady climb the integral equals gain²/span — the score scale is unchanged.
+const steady = hardestClimb(flat, mkElev(d => Math.min(d, 500) * 0.10));
+assert(Math.abs(steady.score - steady.gain ** 2 / steady.span) < 0.15,
+    `steady climb: integral ≈ gain²/span (${steady.score.toFixed(2)} vs ${(steady.gain ** 2 / steady.span).toFixed(2)})`);
 
 // Bridge interpolation: a 5% road crossing a 40 m-deep gorge on a bridge
 // (middle third flagged b) must read ~5%, not a cliff.
