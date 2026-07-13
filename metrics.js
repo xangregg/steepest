@@ -17,9 +17,11 @@ export function haversine(a, b) {
 // can be replaced later.
 export function resample(pts, step = SAMPLE_STEP) {
     const cum = [0];
-    for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + haversine(pts[i - 1], pts[i]));
+    for (let i = 1; i < pts.length; i++)
+        cum.push(cum[i - 1] + haversine(pts[i - 1], pts[i]));
     const total = cum[cum.length - 1];
-    if (total === 0) return [{ ...pts[0], d: 0 }];
+    if (total === 0)
+        return [{ ...pts[0], d: 0 }];
     const bridgeSeg = s => !!(pts[s].b && pts[s + 1].b);
     const nSeg = Math.max(1, Math.round(total / step));
     const actual = total / nSeg;
@@ -27,7 +29,8 @@ export function resample(pts, step = SAMPLE_STEP) {
     let seg = 1;
     for (let k = 1; k <= nSeg; k++) {
         const target = k * actual;
-        while (seg < cum.length - 1 && cum[seg] < target) seg++;
+        while (seg < cum.length - 1 && cum[seg] < target)
+            seg++;
         const span = cum[seg] - cum[seg - 1];
         const f = span > 0 ? (target - cum[seg - 1]) / span : 0;
         out.push({
@@ -48,9 +51,13 @@ function deckElevations(samples, elevs) {
     const out = Array.from(elevs);
     let i = 0;
     while (i < n) {
-        if (!samples[i].b) { i++; continue; }
+        if (!samples[i].b) {
+            i++;
+            continue;
+        }
         let z = i;
-        while (z + 1 < n && samples[z + 1].b) z++;
+        while (z + 1 < n && samples[z + 1].b)
+            z++;
         const a = i - 1, w = z + 1;
         if (a >= 0 && w < n) {
             const d0 = samples[a].d, span = samples[w].d - d0;
@@ -58,10 +65,27 @@ function deckElevations(samples, elevs) {
                 const f = span > 0 ? (samples[k].d - d0) / span : 0;
                 out[k] = elevs[a] + (elevs[w] - elevs[a]) * f;
             }
-        } else if (a >= 0) {
-            for (let k = i; k <= z; k++) out[k] = elevs[a];      // bridge at road end
-        } else if (w < n) {
-            for (let k = i; k <= z; k++) out[k] = elevs[w];      // bridge at road start
+        }
+        else if (a >= 0) {
+            // bridge at road end
+            for (let k = i; k <= z; k++)
+                out[k] = elevs[a];
+        }
+        else if (w < n) {
+            // bridge at road start
+            for (let k = i; k <= z; k++)
+                out[k] = elevs[w];
+        }
+        else {
+            // The whole chain is a bridge (a named bridge is often its own
+            // OSM way, hence its own chain). Anchor the deck on its own
+            // endpoints — the abutments, where the DEM meets road level — so
+            // the valley underneath doesn't read as a climb.
+            const d0 = samples[i].d, span = samples[z].d - d0;
+            for (let k = i; k <= z; k++) {
+                const f = span > 0 ? (samples[k].d - d0) / span : 0;
+                out[k] = elevs[i] + (elevs[z] - elevs[i]) * f;
+            }
         }
         i = z + 1;
     }
@@ -81,7 +105,10 @@ function smooth(elevs) {
 export function analyzeRoad(samples, elevs) {
     const elev = smooth(deckElevations(samples, elevs));
     let eMin = Infinity, eMax = -Infinity;
-    for (const v of elev) { eMin = Math.min(eMin, v); eMax = Math.max(eMax, v); }
+    for (const v of elev) {
+        eMin = Math.min(eMin, v);
+        eMax = Math.max(eMax, v);
+    }
     return { elev, length: samples[samples.length - 1].d, eMin, eMax };
 }
 
@@ -92,16 +119,22 @@ export function analyzeRoad(samples, elevs) {
 // degenerates to per-segment grades.
 export function segmentSustained(samples, elev, windowM) {
     const n = samples.length;
-    if (n < 2 || samples[n - 1].d < windowM) return null;
+    if (n < 2 || samples[n - 1].d < windowM)
+        return null;
     const vals = new Float64Array(n - 1);
     let j = 0;
     for (let i = 0; i < n - 1; i++) {
-        if (j <= i) j = i + 1;
-        while (j < n - 1 && samples[j].d - samples[i].d < windowM) j++;
+        if (j <= i)
+            j = i + 1;
+        while (j < n - 1 && samples[j].d - samples[i].d < windowM)
+            j++;
         const span = samples[j].d - samples[i].d;
-        if (span < windowM) break; // remaining starts only get shorter windows
+        if (span < windowM)
+            break; // remaining starts only get shorter windows
         const g = Math.abs(elev[j] - elev[i]) / span;
-        for (let k = i; k < j; k++) if (g > vals[k]) vals[k] = g;
+        for (let k = i; k < j; k++)
+            if (g > vals[k])
+                vals[k] = g;
     }
     return vals;
 }
@@ -124,7 +157,8 @@ export const GRIND_MIN_GRADE = 0.02; // a long grind counts from this average gr
 // qualifies.
 export function grindMask(samples, elev, minSpan) {
     const n = samples.length;
-    if (n < 2 || samples[n - 1].d < minSpan) return null;
+    if (n < 2 || samples[n - 1].d < minSpan)
+        return null;
     const up = new Float64Array(n), down = new Float64Array(n);
     for (let k = 1; k < n; k++) {
         const de = elev[k] - elev[k - 1];
@@ -136,23 +170,28 @@ export function grindMask(samples, elev, minSpan) {
     for (let i = 0; i < n - 1; i++) {
         for (let j = i + 1; j < n; j++) {
             const span = samples[j].d - samples[i].d;
-            if (span < minSpan) continue;
+            if (span < minSpan)
+                continue;
             const net = elev[j] - elev[i];
             const gain = Math.abs(net);
-            if (gain / span < GRIND_MIN_GRADE) continue;
+            if (gain / span < GRIND_MIN_GRADE)
+                continue;
             const counter = net > 0 ? down[j] - down[i] : up[j] - up[i];
-            if (counter > Math.max(DIP_ABS, DIP_FRAC * (gain + counter))) continue;
+            if (counter > Math.max(DIP_ABS, DIP_FRAC * (gain + counter)))
+                continue;
             diff[i]++;
             diff[j]--;
             any = true;
         }
     }
-    if (!any) return null;
+    if (!any)
+        return null;
     const mask = new Uint8Array(n - 1);
     let cover = 0;
     for (let k = 0; k < n - 1; k++) {
         cover += diff[k];
-        if (cover > 0) mask[k] = 1;
+        if (cover > 0)
+            mask[k] = 1;
     }
     // Interval membership alone would mark a dead-flat tail whose interval
     // qualifies via an attached hill. Trim each run's ends back to where the
@@ -161,16 +200,21 @@ export function grindMask(samples, elev, minSpan) {
     let a = -1;
     for (let k = 0; k <= n - 1; k++) {
         const on = k < n - 1 && mask[k];
-        if (on && a < 0) a = k;
+        if (on && a < 0) {
+            a = k;
+        }
         else if (!on && a >= 0) {
             let b = k - 1;
-            while (a <= b && !localOk(a)) mask[a++] = 0;
-            while (b >= a && !localOk(b)) mask[b--] = 0;
+            while (a <= b && !localOk(a))
+                mask[a++] = 0;
+            while (b >= a && !localOk(b))
+                mask[b--] = 0;
             a = -1;
         }
     }
     return mask.some(v => v) ? mask : null;
 }
+
 const TRIM_KEEP = 0.95;  // report the shortest interval keeping this share of the best score
 const EXT_MIN_GRADE = 0.05; // extend the reported extent over adjacent climbing this steep
 
@@ -189,7 +233,8 @@ const EXT_MIN_GRADE = 0.05; // extend the reported extent over adjacent climbing
 // j, dir} or null for a road with no meaningful climb.
 export function hardestClimb(samples, elev, extMinGrade = EXT_MIN_GRADE) {
     const n = samples.length;
-    if (n < 2) return null;
+    if (n < 2)
+        return null;
     const up = new Float64Array(n), down = new Float64Array(n);
     for (let k = 1; k < n; k++) {
         const de = elev[k] - elev[k - 1];
@@ -200,10 +245,12 @@ export function hardestClimb(samples, elev, extMinGrade = EXT_MIN_GRADE) {
     // net < 0: climb traveling backward, counter-slope is forward ascent.
     const evalPair = (i, j) => {
         const net = elev[j] - elev[i];
-        if (net === 0) return null;
+        if (net === 0)
+            return null;
         const gain = Math.abs(net);
         const counter = net > 0 ? down[j] - down[i] : up[j] - up[i];
-        if (counter > Math.max(DIP_ABS, DIP_FRAC * (gain + counter))) return null;
+        if (counter > Math.max(DIP_ABS, DIP_FRAC * (gain + counter)))
+            return null;
         const span = samples[j].d - samples[i].d;
         return { score: (gain * gain) / span, gain, span, grade: gain / span, i, j, dir: Math.sign(net) };
     };
@@ -211,16 +258,19 @@ export function hardestClimb(samples, elev, extMinGrade = EXT_MIN_GRADE) {
     for (let i = 0; i < n - 1; i++) {
         for (let j = i + 1; j < n; j++) {
             const c = evalPair(i, j);
-            if (c && (!best || c.score > best.score)) best = c;
+            if (c && (!best || c.score > best.score))
+                best = c;
         }
     }
-    if (!best || best.gain < DIP_ABS) return null;
+    if (!best || best.gain < DIP_ABS)
+        return null;
     let tight = best;
     const floor = TRIM_KEEP * best.score;
     for (let i = 0; i < n - 1; i++) {
         for (let j = i + 1; j < n; j++) {
             const c = evalPair(i, j);
-            if (c && c.score >= floor && c.span < tight.span) tight = c;
+            if (c && c.score >= floor && c.span < tight.span)
+                tight = c;
         }
     }
     // gain²/span only admits a tail steeper than half the climb's average, so
@@ -230,8 +280,10 @@ export function hardestClimb(samples, elev, extMinGrade = EXT_MIN_GRADE) {
     // not extra hardness).
     let { i, j } = tight;
     const climbGrade = k => ((elev[k + 1] - elev[k]) * tight.dir) / (samples[k + 1].d - samples[k].d);
-    while (j < n - 1 && climbGrade(j) >= extMinGrade) j++;
-    while (i > 0 && climbGrade(i - 1) >= extMinGrade) i--;
+    while (j < n - 1 && climbGrade(j) >= extMinGrade)
+        j++;
+    while (i > 0 && climbGrade(i - 1) >= extMinGrade)
+        i--;
     const gain = Math.abs(elev[j] - elev[i]);
     const span = samples[j].d - samples[i].d;
     // Effort integral: climbing segments contribute length × grade²; flats and
@@ -239,7 +291,8 @@ export function hardestClimb(samples, elev, extMinGrade = EXT_MIN_GRADE) {
     let score = 0;
     for (let k = i; k < j; k++) {
         const de = (elev[k + 1] - elev[k]) * tight.dir;
-        if (de > 0) score += (de * de) / (samples[k + 1].d - samples[k].d);
+        if (de > 0)
+            score += (de * de) / (samples[k + 1].d - samples[k].d);
     }
     return { ...tight, i, j, gain, span, grade: gain / span, score };
 }

@@ -72,13 +72,15 @@ async function run(refresh = false) {
                 onBytes: b => { bytes = b; },
                 onNote: n => { roadsNote = n; },
             });
-        } finally {
+        }
+        finally {
             clearInterval(tick);
         }
         const roads = prepareRoads(elements).map(r => ({ ...r, samples: resample(r.pts) }))
             .filter(r => r.samples.length >= 3); // need >= ~50 m to say anything
 
-        if (!roads.length) throw new Error('No roads found in this area — try a larger radius.');
+        if (!roads.length)
+            throw new Error('No roads found in this area — try a larger radius.');
 
         const points = roads.flatMap(r => r.samples);
         status(`Found ${roads.length.toLocaleString()} roads · sampling elevation…`, { progress: null });
@@ -103,17 +105,24 @@ async function run(refresh = false) {
         map.fitBounds(L.latLng(center.lat, center.lon).toBounds(radiusM * 2));
         updateHash(query);
         render();
-    } catch (err) {
-        if (err.name !== 'AbortError') status(err.message, { error: true });
-    } finally {
-        if (abort === ctl) { abort = null; $('go').disabled = false; }
+    }
+    catch (err) {
+        if (err.name !== 'AbortError')
+            status(err.message, { error: true });
+    }
+    finally {
+        if (abort === ctl) {
+            abort = null;
+            $('go').disabled = false;
+        }
     }
 }
 
 // Re-rank and redraw from cached results (window-length / min-length / theme
 // changes don't refetch anything — the elevation profiles are kept per road).
 function render() {
-    if (!state) return;
+    if (!state)
+        return;
     const windowM = Math.max(SAMPLE_STEP, +$('window').value || 250);
     const minLen = Math.max(0, +$('minlen').value || 0);
     const rankMode = $('rankmode').value;
@@ -127,16 +136,20 @@ function render() {
         .filter(r => r.value != null && r.length >= minLen);
     if (rankMode === 'climb') {
         // Climbs don't depend on the window; memoized until the next search.
-        for (const r of ranked) if (r.climb === undefined) r.climb = hardestClimb(r.samples, r.elev);
+        for (const r of ranked)
+            if (r.climb === undefined)
+                r.climb = hardestClimb(r.samples, r.elev);
         ranked = ranked.filter(r => r.climb).sort((a, b) => b.climb.score - a.climb.score);
         // Keep a climb visible across its interior flats: floor the winning
         // climb's segments at the climb's average grade for coloring.
         for (const r of ranked) {
             const paint = Float64Array.from(r.segs);
-            for (let k = r.climb.i; k < r.climb.j; k++) paint[k] = Math.max(paint[k], r.climb.grade);
+            for (let k = r.climb.i; k < r.climb.j; k++)
+                paint[k] = Math.max(paint[k], r.climb.grade);
             r.paint = paint;
         }
-    } else {
+    }
+    else {
         ranked.sort((a, b) => b.value - a.value);
     }
 
@@ -159,10 +172,12 @@ function render() {
     const seen = new Set();
     const top = [];
     for (const r of ranked) {
-        if (!r.unnamed && seen.has(r.name)) continue;
+        if (!r.unnamed && seen.has(r.name))
+            continue;
         seen.add(r.name);
         top.push(r);
-        if (top.length >= LIST_MAX) break;
+        if (top.length >= LIST_MAX)
+            break;
     }
     renderList($('road-list'), top, mode(), {
         rankMode,
@@ -184,16 +199,19 @@ function render() {
         b.textContent = 'refresh from OSM';
         b.addEventListener('click', () => run(true));
         $('status').append(b);
-    } else {
+    }
+    else {
         status(`Done. ${doneMsg}`);
     }
 }
 
 function ago(t) {
     const mins = Math.round((Date.now() - t) / 60000);
-    if (mins < 60) return mins <= 1 ? 'just now' : `${mins} min ago`;
+    if (mins < 60)
+        return mins <= 1 ? 'just now' : `${mins} min ago`;
     const hours = Math.round(mins / 60);
-    if (hours < 48) return `${hours} h ago`;
+    if (hours < 48)
+        return `${hours} h ago`;
     return `${Math.round(hours / 24)} days ago`;
 }
 
@@ -208,21 +226,37 @@ function updateHash(query) {
     history.replaceState(null, '', '#' + p.toString());
 }
 
-$('controls').addEventListener('submit', e => { e.preventDefault(); run(); });
-$('window').addEventListener('change', () => { render(); if (state) updateHash($('place').value.trim()); });
-$('minlen').addEventListener('change', () => { render(); if (state) updateHash($('place').value.trim()); });
-$('rankmode').addEventListener('change', () => { render(); if (state) updateHash($('place').value.trim()); });
-darkQuery.addEventListener('change', () => { setMode(mode()); render(); });
+$('controls').addEventListener('submit', e => {
+    e.preventDefault();
+    run();
+});
+const onControlChange = () => {
+    render();
+    if (state)
+        updateHash($('place').value.trim());
+};
+$('window').addEventListener('change', onControlChange);
+$('minlen').addEventListener('change', onControlChange);
+$('rankmode').addEventListener('change', onControlChange);
+darkQuery.addEventListener('change', () => {
+    setMode(mode());
+    render();
+});
 
 // Restore a shared/bookmarked search from the URL hash.
 const params = new URLSearchParams(location.hash.slice(1));
 if (params.get('q')) {
     $('place').value = params.get('q');
-    if (params.get('r')) $('radius').value = params.get('r');
-    if (params.get('w')) $('window').value = params.get('w');
-    if (params.get('min')) $('minlen').value = params.get('min');
-    if (['sustained', 'climb'].includes(params.get('mode'))) $('rankmode').value = params.get('mode');
+    if (params.get('r'))
+        $('radius').value = params.get('r');
+    if (params.get('w'))
+        $('window').value = params.get('w');
+    if (params.get('min'))
+        $('minlen').value = params.get('min');
+    if (['sustained', 'climb'].includes(params.get('mode')))
+        $('rankmode').value = params.get('mode');
     run();
-} else {
+}
+else {
     status('Enter a town (e.g. “Pittsburgh, PA”) or coordinates, then hit the button.');
 }

@@ -5,7 +5,7 @@
 
 const DB_NAME = 'steepest';
 const STORE = 'searches';
-const VERSION_TAG = 5;                       // bump when the processed-road shape changes
+const VERSION_TAG = 6;                       // bump when the processed-road shape changes
 const TTL_MS = 14 * 24 * 3600 * 1000;        // roads barely change; 2 weeks is safe
 
 function openDb() {
@@ -26,7 +26,8 @@ async function withStore(mode, fn) {
             tx.oncomplete = () => resolve(req?.result);
             tx.onerror = () => reject(tx.error);
         });
-    } finally {
+    }
+    finally {
         db.close();
     }
 }
@@ -44,7 +45,8 @@ export async function cacheGet(key) {
     try {
         const entry = await withStore('readonly', s => s.get(key));
         return entry && !expired(entry) ? entry : null;
-    } catch (err) {
+    }
+    catch (err) {
         console.warn('[cache] read failed:', err);
         return null;
     }
@@ -56,12 +58,15 @@ export async function cachePut(key, roads) {
         await withStore('readwrite', s => {
             s.openCursor().onsuccess = e => {
                 const cur = e.target.result;
-                if (!cur) return;
-                if (expired(cur.value)) cur.delete();
+                if (!cur)
+                    return;
+                if (expired(cur.value))
+                    cur.delete();
                 cur.continue();
             };
         });
-    } catch (err) {
+    }
+    catch (err) {
         console.warn('[cache] write failed:', err); // best effort — never fatal
     }
 }

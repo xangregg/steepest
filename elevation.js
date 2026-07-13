@@ -11,7 +11,8 @@ const tileCache = new Map(); // "z/x/y" -> Promise<RGBA byte array>
 // its own decoder (e.g. pngjs) to elevatePoints instead.
 async function decodeTileBrowser(url, signal) {
     const res = await fetch(url, { signal });
-    if (!res.ok) throw new Error(`Elevation tile HTTP ${res.status}`);
+    if (!res.ok)
+        throw new Error(`Elevation tile HTTP ${res.status}`);
     const bmp = await createImageBitmap(await res.blob());
     const canvas = document.createElement('canvas');
     canvas.width = canvas.height = TILE_SIZE;
@@ -51,7 +52,8 @@ function bilinear(rgba, px, py) {
 async function runPool(jobs, limit) {
     const queue = [...jobs];
     const workers = Array.from({ length: Math.min(limit, queue.length) }, async () => {
-        while (queue.length) await queue.shift()();
+        while (queue.length)
+            await queue.shift()();
     });
     await Promise.all(workers);
 }
@@ -68,7 +70,9 @@ export async function elevatePoints(points, { zoom = 13, decodeTile = decodeTile
     });
 
     const needed = new Map(); // key -> url, only tiles not already cached
-    for (const l of locs) if (!tileCache.has(l.key) && !needed.has(l.key)) needed.set(l.key, l.url);
+    for (const l of locs)
+        if (!tileCache.has(l.key) && !needed.has(l.key))
+            needed.set(l.key, l.url);
     let done = 0;
     const total = needed.size;
     onProgress?.(0, total);
@@ -77,7 +81,8 @@ export async function elevatePoints(points, { zoom = 13, decodeTile = decodeTile
         tileCache.set(key, promise);
         try {
             await promise;
-        } catch (err) {
+        }
+        catch (err) {
             tileCache.delete(key); // don't cache failures
             throw err;
         }

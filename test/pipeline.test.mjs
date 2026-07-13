@@ -46,12 +46,16 @@ import { resample, analyzeRoad, segmentSustained, sustainedGrade, hardestClimb, 
 
 const decodeTile = async url => {
     const res = await fetch(url);
-    if (!res.ok) throw new Error(`tile HTTP ${res.status} for ${url}`);
+    if (!res.ok)
+        throw new Error(`tile HTTP ${res.status} for ${url}`);
     return PNG.sync.read(Buffer.from(await res.arrayBuffer())).data; // flat RGBA
 };
 
 function assert(cond, msg) {
-    if (!cond) { console.error(`FAIL: ${msg}`); process.exit(1); }
+    if (!cond) {
+        console.error(`FAIL: ${msg}`);
+        process.exit(1);
+    }
     console.log(`ok: ${msg}`);
 }
 
@@ -144,6 +148,12 @@ const noFlags = resample(ptsB.map(({ lat, lon }) => ({ lat, lon })));
 const withoutFix = sustainedGrade(noFlags, analyzeRoad(noFlags, gorge).elev, 100);
 assert(withFix < 0.08, `bridge deck interpolated: ${(withFix * 100).toFixed(1)}% (was ${(withoutFix * 100).toFixed(1)}% uncorrected)`);
 assert(withoutFix > 0.2, 'sanity: uncorrected gorge does read as a cliff');
+// A named bridge is often its own chain with every sample flagged: the deck
+// must anchor on its own endpoints instead of silently keeping the valley.
+const allBridge = resample([{ lat: 35, lon: -82.6, b: true }, { lat: 35.009, lon: -82.6, b: true }]);
+const valley = allBridge.map(s => 100 + s.d * 0.02 - (s.d > 200 && s.d < 800 ? 35 : 0));
+const deck = sustainedGrade(allBridge, analyzeRoad(allBridge, valley).elev, 100);
+assert(deck < 0.03, `all-bridge chain reads as its deck: ${(deck * 100).toFixed(1)}%`);
 
 // Live pipeline: small mountain town, modest radius to be kind to Overpass.
 const center = await geocode('Brevard, North Carolina');

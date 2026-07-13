@@ -16,9 +16,11 @@ const HIGHWAY_RE = 'residential|unclassified|living_street|tertiary|secondary|pr
 // "35.2, -82.7" -> {lat, lon, label} or null if the text isn't a coordinate pair.
 export function parseLatLon(text) {
     const m = text.trim().match(/^(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)$/);
-    if (!m) return null;
+    if (!m)
+        return null;
     const lat = +m[1], lon = +m[2];
-    if (Math.abs(lat) > 90 || Math.abs(lon) > 180) return null;
+    if (Math.abs(lat) > 90 || Math.abs(lon) > 180)
+        return null;
     return { lat, lon, label: `${lat.toFixed(4)}, ${lon.toFixed(4)}` };
 }
 
@@ -31,19 +33,27 @@ export async function geocode(query, signal) {
     const cacheKey = 'steepest.geo:' + query.toLowerCase().replace(/\s+/g, ' ').trim();
     try {
         const hit = JSON.parse(localStorage.getItem(cacheKey));
-        if (hit && Date.now() - hit.t < GEO_TTL_MS) return hit;
-    } catch { /* cache miss */ }
+        if (hit && Date.now() - hit.t < GEO_TTL_MS)
+            return hit;
+    }
+    catch { /* cache miss */ }
 
     const url = `${NOMINATIM}?format=json&limit=1&q=${encodeURIComponent(query)}`;
     // Nominatim's usage policy wants an identifying UA; browsers set their own.
     const opts = { signal };
-    if (typeof window === 'undefined') opts.headers = { 'User-Agent': 'steepest-roads/1.0 (dev test)' };
+    if (typeof window === 'undefined')
+        opts.headers = { 'User-Agent': 'steepest-roads/1.0 (dev test)' };
     const res = await fetch(url, opts);
-    if (!res.ok) throw new Error(`Geocoding failed (HTTP ${res.status})`);
+    if (!res.ok)
+        throw new Error(`Geocoding failed (HTTP ${res.status})`);
     const hits = await res.json();
-    if (!hits.length) throw new Error(`No place found for “${query}”`);
+    if (!hits.length)
+        throw new Error(`No place found for “${query}”`);
     const result = { lat: +hits[0].lat, lon: +hits[0].lon, label: hits[0].display_name };
-    try { localStorage.setItem(cacheKey, JSON.stringify({ ...result, t: Date.now() })); } catch { /* best effort */ }
+    try {
+        localStorage.setItem(cacheKey, JSON.stringify({ ...result, t: Date.now() }));
+    }
+    catch { /* best effort */ }
     return result;
 }
 
@@ -64,9 +74,11 @@ out geom;`;
         for (const endpoint of OVERPASS_ENDPOINTS) {
             try {
                 const headers = { 'Content-Type': 'application/x-www-form-urlencoded' };
-                if (typeof window === 'undefined') headers['User-Agent'] = 'steepest-roads/1.0 (dev test)';
+                if (typeof window === 'undefined')
+                    headers['User-Agent'] = 'steepest-roads/1.0 (dev test)';
                 const res = await fetch(endpoint, { method: 'POST', headers, body: 'data=' + encodeURIComponent(q), signal });
-                if (!res.ok) throw new Error(`Overpass HTTP ${res.status}`);
+                if (!res.ok)
+                    throw new Error(`Overpass HTTP ${res.status}`);
                 let text;
                 if (res.body?.getReader) {
                     // Stream the body so the UI can show live download progress.
@@ -76,19 +88,23 @@ out geom;`;
                     text = '';
                     for (;;) {
                         const { done, value } = await reader.read();
-                        if (done) break;
+                        if (done)
+                            break;
                         received += value.length;
                         text += decoder.decode(value, { stream: true });
                         onBytes?.(received);
                     }
                     text += decoder.decode();
-                } else {
+                }
+                else {
                     text = await res.text();
                 }
                 const json = JSON.parse(text); // an HTML error page here throws -> retry
                 return json.elements ?? [];
-            } catch (err) {
-                if (err.name === 'AbortError') throw err;
+            }
+            catch (err) {
+                if (err.name === 'AbortError')
+                    throw err;
                 lastErr = err;
             }
         }
@@ -121,11 +137,16 @@ export function prepareRoads(elements) {
     const byName = new Map();
     const out = [];
     for (const w of ways) {
-        if (!w.name) { out.push({ ...w, name: `(unnamed ${w.id})`, unnamed: true }); continue; }
-        if (!byName.has(w.name)) byName.set(w.name, []);
+        if (!w.name) {
+            out.push({ ...w, name: `(unnamed ${w.id})`, unnamed: true });
+            continue;
+        }
+        if (!byName.has(w.name))
+            byName.set(w.name, []);
         byName.get(w.name).push(w);
     }
-    for (const group of byName.values()) out.push(...stitchGroup(group));
+    for (const group of byName.values())
+        out.push(...stitchGroup(group));
     return out;
 }
 
@@ -150,7 +171,8 @@ function interiorRef(pts, atStart) {
     let acc = 0;
     for (let i = 1; i < ordered.length; i++) {
         acc += haversine(ordered[i - 1], ordered[i]);
-        if (acc >= REF_DIST) return ordered[i];
+        if (acc >= REF_DIST)
+            return ordered[i];
     }
     return ordered[ordered.length - 1];
 }
@@ -162,7 +184,8 @@ function turnAngle(wa, aAtStart, wb, bAtStart, joinPt) {
     const dirIn = bearing(interiorRef(wa.pts, aAtStart), joinPt);
     const dirOut = bearing(joinPt, interiorRef(wb.pts, bAtStart));
     let diff = Math.abs(dirIn - dirOut);
-    if (diff > Math.PI) diff = 2 * Math.PI - diff;
+    if (diff > Math.PI)
+        diff = 2 * Math.PI - diff;
     return diff;
 }
 
@@ -180,26 +203,35 @@ function stitchGroup(ways) {
         ways.forEach((w, i) => {
             for (const p of [w.pts[0], w.pts[w.pts.length - 1]]) {
                 const k = ptKey(p);
-                if (!ends.has(k)) ends.set(k, []);
+                if (!ends.has(k))
+                    ends.set(k, []);
                 ends.get(k).push({ i, atStart: p === w.pts[0] });
             }
         });
         const conflict = (x, y) => !!(x && y && x !== y);
         for (const list of ends.values()) {
-            if (list.length < 2 || list.length > 3) continue;
+            if (list.length < 2 || list.length > 3)
+                continue;
             let a = null, b = null, bestTurn = Infinity;
             for (let x = 0; x < list.length; x++) {
                 for (let y = x + 1; y < list.length; y++) {
                     const pa = list[x], pb = list[y];
-                    if (pa.i === pb.i) continue;
+                    if (pa.i === pb.i)
+                        continue;
                     const wx = ways[pa.i], wy = ways[pb.i];
-                    if (conflict(wx.base, wy.base) || conflict(wx.nameType, wy.nameType)) continue;
+                    if (conflict(wx.base, wy.base) || conflict(wx.nameType, wy.nameType))
+                        continue;
                     const pt = pa.atStart ? wx.pts[0] : wx.pts[wx.pts.length - 1];
                     const turn = turnAngle(wx, pa.atStart, wy, pb.atStart, pt);
-                    if (turn <= MAX_TURN && turn < bestTurn) { bestTurn = turn; a = pa; b = pb; }
+                    if (turn <= MAX_TURN && turn < bestTurn) {
+                        bestTurn = turn;
+                        a = pa;
+                        b = pb;
+                    }
                 }
             }
-            if (!a) continue;
+            if (!a)
+                continue;
             const wa = ways[a.i], wb = ways[b.i];
             const head = a.atStart ? [...wa.pts].reverse() : wa.pts;
             const tail = b.atStart ? wb.pts : [...wb.pts].reverse();

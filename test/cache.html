@@ -28,10 +28,12 @@
             phase = 2;
             result.textContent = 'phase 2: reloading…';
             f.contentWindow.location.reload();
-        } else if (phase === 2 && st.includes('cached')) {
+        }
+        else if (phase === 2 && st.includes('cached')) {
             result.textContent = 'CACHE HIT — ' + st;
             clearInterval(timer);
-        } else if (phase === 2 && st.startsWith('Done.')) {
+        }
+        else if (phase === 2 && st.startsWith('Done.')) {
             result.textContent = 'CACHE MISS — ' + st;
             clearInterval(timer);
         }

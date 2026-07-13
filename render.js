@@ -50,7 +50,8 @@ export function initMap(el, mode) {
     map.setView([39, -96], 4); // continental US until a search runs
     let base = null;
     const setBase = m => {
-        if (base) map.removeLayer(base);
+        if (base)
+            map.removeLayer(base);
         base = L.tileLayer(BASEMAPS[m], { attribution: BASEMAP_ATTR, maxZoom: 19 }).addTo(map);
     };
     setBase(mode);
@@ -100,7 +101,8 @@ function popupHtml(road, stretchValue, windowM, segK) {
         <div class="popup-row popup-active"><span>This ${Math.round(s1.d - s0.d)} m segment</span><b>${fmtPct(g)} · ${Math.round(e0)}→${Math.round(e1)} m</b></div>
         <div class="popup-row"><span>Sustained ${windowM} m here</span><b>${fmtPct(road.segs[segK])}</b></div>
         <div class="popup-row"><span>Along road</span><b>${fmtLen(s0.d)} of ${fmtLen(road.length)}</b></div>`;
-    } else {
+    }
+    else {
         localRows = `
         <div class="popup-row popup-active"><span>This stretch (sustained ${windowM} m)</span><b>${fmtPct(stretchValue)}</b></div>
         <div class="popup-row"><span>Length</span><b>${fmtLen(road.length)}</b></div>`;
@@ -119,7 +121,10 @@ function nearestSegIndex(road, latlng) {
         const s = road.samples[i];
         const dLat = s.lat - latlng.lat, dLon = (s.lon - latlng.lng) * cosLat;
         const d2 = dLat * dLat + dLon * dLon;
-        if (d2 < bestD) { bestD = d2; best = i; }
+        if (d2 < bestD) {
+            bestD = d2;
+            best = i;
+        }
     }
     return Math.min(best, road.samples.length - 2);
 }
@@ -152,10 +157,13 @@ function colorChunks(road, splitAt) {
     let gapStart = -1;
     for (let k = 0; k <= paint.length; k++) {
         const low = k < paint.length && paint[k] < GRADE_MIN;
-        if (low && gapStart < 0) gapStart = k;
+        if (low && gapStart < 0) {
+            gapStart = k;
+        }
         else if (!low && gapStart >= 0) {
             if (gapStart > 0 && k < paint.length && samples[k].d - samples[gapStart].d <= GAP_CLOSE_M) {
-                for (let m = gapStart; m < k; m++) paint[m] = GRADE_MIN;
+                for (let m = gapStart; m < k; m++)
+                    paint[m] = GRADE_MIN;
             }
             gapStart = -1;
         }
@@ -164,12 +172,16 @@ function colorChunks(road, splitAt) {
     const chunks = [];
     let cur = null;
     for (let k = 0; k < segs.length; k++) {
-        if (paint[k] < GRADE_MIN) { cur = null; continue; }
+        if (paint[k] < GRADE_MIN) {
+            cur = null;
+            continue;
+        }
         const b = bin(paint[k]);
         if (!cur || b !== cur.bin || splitAt?.has(k)) {
             cur = { bin: b, paint: paint[k], value: segs[k], kStart: k, kEnd: k + 1 };
             chunks.push(cur);
-        } else {
+        }
+        else {
             cur.paint = Math.max(cur.paint, paint[k]);
             cur.value = Math.max(cur.value, segs[k]);
             cur.kEnd = k + 1;
@@ -203,8 +215,10 @@ function roadGeometry(map, samples) {
         const mlen = Math.hypot(mx, my);
         if (mlen < 1e-9) { // 180° hairpin: fall back to the previous normal
             normals.push({ nx: -a.y, ny: a.x, scale: 1 });
-        } else {
-            mx /= mlen; my /= mlen;
+        }
+        else {
+            mx /= mlen;
+            my /= mlen;
             // Miter: widen by 1/cos(half-angle), clamped so hairpins don't spike.
             normals.push({ nx: -my, ny: mx, scale: 1 / Math.max(1 / 3, mx * a.x + my * a.y) });
         }
@@ -240,15 +254,22 @@ export function drawRoads(map, ranked, windowM, mode, rankMode = 'sustained') {
 
     function setHighlight(road, on) {
         const e = lines.get(road);
-        if (!e) return;
+        if (!e)
+            return;
         e.skeleton.setStyle({ opacity: on ? 0.55 : 0 });
         const emphasizeClimb = isClimbMode && road.climb;
         for (const { poly, inClimb, isGrind } of e.chunks) {
-            // Grinds stay translucent; hover just fattens their outline.
-            if (isGrind) poly.setStyle({ opacity: on ? GRIND_OPACITY : 0, fillOpacity: GRIND_OPACITY });
-            else if (emphasizeClimb && !inClimb) poly.setStyle({ opacity: 0, fillOpacity: on ? 0.45 : 1 });
-            // The outline stroke (same color) fattens the ribbon when shown.
-            else poly.setStyle({ opacity: on ? 1 : 0, fillOpacity: 1 });
+            if (isGrind) {
+                // Grinds stay translucent; hover just fattens their outline.
+                poly.setStyle({ opacity: on ? GRIND_OPACITY : 0, fillOpacity: GRIND_OPACITY });
+            }
+            else if (emphasizeClimb && !inClimb) {
+                poly.setStyle({ opacity: 0, fillOpacity: on ? 0.45 : 1 });
+            }
+            else {
+                // The outline stroke (same color) fattens the ribbon when shown.
+                poly.setStyle({ opacity: on ? 1 : 0, fillOpacity: 1 });
+            }
         }
     }
 
@@ -270,14 +291,18 @@ export function drawRoads(map, ranked, windowM, mode, rankMode = 'sustained') {
             let a = -1;
             for (let k = 0; k <= road.grind.length; k++) {
                 const on = k < road.grind.length && road.grind[k];
-                if (on && a < 0) a = k;
+                if (on && a < 0) {
+                    a = k;
+                }
                 else if (!on && a >= 0) {
                     const kStart = a, kEnd = k; // sample range of the run
                     let base = Infinity;
-                    for (let m = kStart; m <= kEnd; m++) base = Math.min(base, road.elev[m]);
+                    for (let m = kStart; m <= kEnd; m++)
+                        base = Math.min(base, road.elev[m]);
                     const halfAt = m => (WIDTH_MIN + WIDTH_PER_M * (road.elev[m] - base)) / 2;
                     let best = 0;
-                    for (let m = kStart; m < kEnd; m++) best = Math.max(best, road.segs[m]);
+                    for (let m = kStart; m < kEnd; m++)
+                        best = Math.max(best, road.segs[m]);
                     const c = GRIND_COLORS[mode];
                     const poly = L.polygon(ribbonRing(geom, kStart, kEnd, halfAt), {
                         fillColor: c, fillOpacity: GRIND_OPACITY,
@@ -306,13 +331,15 @@ export function drawRoads(map, ranked, windowM, mode, rankMode = 'sustained') {
             if (prev && prev.hue === hue && prev.kEnd === chunk.kStart) {
                 prev.kEnd = chunk.kEnd;
                 prev.items.push(chunk);
-            } else {
+            }
+            else {
                 runs.push({ hue, inClimb, kStart: chunk.kStart, kEnd: chunk.kEnd, items: [chunk] });
             }
         }
         for (const run of runs) {
             let base = Infinity;
-            for (let k = run.kStart; k <= run.kEnd; k++) base = Math.min(base, road.elev[k]);
+            for (let k = run.kStart; k <= run.kEnd; k++)
+                base = Math.min(base, road.elev[k]);
             const halfAt = k => (WIDTH_MIN + WIDTH_PER_M * (road.elev[k] - base)) / 2;
             for (const chunk of run.items) {
                 const c = (isClimbMode && !run.inClimb ? colorAlt : color)(chunk.paint);
@@ -351,9 +378,11 @@ export function drawRoads(map, ranked, windowM, mode, rankMode = 'sustained') {
     // Pixel-based widths mean the ribbon geometry is zoom-dependent.
     const rebuild = () => {
         for (const [road, e] of lines) {
-            if (!e.chunks.length) continue;
+            if (!e.chunks.length)
+                continue;
             const geom = roadGeometry(map, road.samples);
-            for (const c of e.chunks) c.poly.setLatLngs(ribbonRing(geom, c.kStart, c.kEnd, c.halfAt));
+            for (const c of e.chunks)
+                c.poly.setLatLngs(ribbonRing(geom, c.kStart, c.kEnd, c.halfAt));
         }
     };
     map.on('zoomend', rebuild);
@@ -363,7 +392,8 @@ export function drawRoads(map, ranked, windowM, mode, rankMode = 'sustained') {
         highlight: setHighlight,
         focus(road) {
             const e = lines.get(road);
-            if (!e) return;
+            if (!e)
+                return;
             // Frame the climb in climb mode, the whole road otherwise.
             const pts = isClimbMode && road.climb
                 ? road.samples.slice(road.climb.i, road.climb.j + 1)
@@ -385,7 +415,8 @@ export function renderList(el, roads, mode, { rankMode = 'sustained', onHover, o
     const color = makeGradeColor(RAMPS[mode]);
     const isClimb = rankMode === 'climb';
     el.replaceChildren();
-    if (!roads.length) return;
+    if (!roads.length)
+        return;
     const top = (isClimb ? roads[0].climb.score : roads[0].value) || 1e-9;
     roads.forEach((road, i) => {
         const row = document.createElement('button');

@@ -57,9 +57,11 @@
         mkRoad('Grind + pitch', 0.02, d => d < 400 ? d * 0.025 : d < 600 ? 10 + (d - 400) * 0.08 : 26 + (d - 600) * 0.025),
     ].sort((a, b) => b.value - a.value);
     for (const r of roads) {
-        if (!r.climb) continue;
+        if (!r.climb)
+            continue;
         const paint = Float64Array.from(r.segs);
-        for (let k = r.climb.i; k < r.climb.j; k++) paint[k] = Math.max(paint[k], r.climb.grade);
+        for (let k = r.climb.i; k < r.climb.j; k++)
+            paint[k] = Math.max(paint[k], r.climb.grade);
         r.paint = paint;
     }
 
@@ -69,7 +71,8 @@
     map.fitBounds([[35.229, -82.742], [35.240, -82.714]]);
     // Optional close-up for seam inspection: #z=17&lat=35.2335&lon=-82.736
     const p = new URLSearchParams(location.hash.slice(1));
-    if (p.get('z')) map.setView([+p.get('lat'), +p.get('lon')], +p.get('z'));
+    if (p.get('z'))
+        map.setView([+p.get('lat'), +p.get('lon')], +p.get('z'));
     // Pre-highlight one road so a screenshot shows the hover state: the climb
     // (upper wall) thickens, the rest dims, and the gray full-road skeleton
     // appears across the unpainted flat half.
@@ -80,7 +83,8 @@
     const target = L.latLng(35.23 + 0.009 * 0.35, -82.74 + 0.012);
     let clicked = false;
     layer.group.eachLayer(fg => fg.eachLayer(l => {
-        if (clicked || !l.getPopup || !l.getPopup() || !l.getBounds().contains(target)) return;
+        if (clicked || !l.getPopup || !l.getPopup() || !l.getBounds().contains(target))
+            return;
         l.fire('click', { latlng: target });
         clicked = true;
     }));
