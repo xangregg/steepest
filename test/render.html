@@ -31,6 +31,9 @@
         road.value = road.segs.reduce((m, v) => Math.max(m, v), 0);
         road.climb = hardestClimb(samples, road.elev);
         road.grind = grindMask(samples, road.elev, 1000);
+        // All fixture roads count as top-listed except the Crosser, which
+        // simulates a road outside the top-N: its climb must render violet.
+        road.topClimb = !!road.climb && name !== 'Crosser 6%';
         return road;
     };
     const mkRoad = (name, lonOffset, elevFn) =>

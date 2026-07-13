@@ -52,14 +52,14 @@ no database, so it hosts happily on GitHub Pages.
    steepest window-length stretch it belongs to, and stretches under 5 % get no
    highlight at all — so the map shows where the hills are, and a long road
    fades in and out with its actual climbs instead of wearing its single best
-   grade everywhere. Long gentle "grinds" — stretches of at least 4× the min
-   length, mostly monotonic, averaging ≥ 2 % — are drawn as a continuous
-   medium-gray underlay beneath the steepness ribbons, so a mile-long 2.5 %
-   incline is acknowledged instead of invisible; its width flare accumulates
-   over the whole grind, unbroken by whatever steep colors sit on top. In
-   hardest-climb mode, winning climbs wear the red ramp
-   while other steep stretches switch to a contrasting violet ramp (same 5–25 %
-   scale), so the climbs can be scanned at a glance; a road's winning climb is
+   grade everywhere. Long inclines — stretches of at least 4× the min length,
+   mostly monotonic, averaging ≥ 2 % — are drawn as a continuous medium-gray
+   underlay beneath the steepness ribbons, so a mile-long 2.5 % incline is
+   acknowledged instead of invisible; its width flare accumulates over the
+   whole incline, unbroken by whatever steep colors sit on top. In
+   hardest-climb mode, the listed (top-25) roads' climbs wear the red ramp
+   while all other steep stretches use a contrasting violet ramp (same 5–25 %
+   scale), so map color mirrors the ranking; a road's winning climb is
    also kept visibly continuous — its segments are colored at least the climb's
    average grade, so a breather mid-climb doesn't punch a hole in the highlight. The sidebar bar chart shares the ramp and doubles as the ranked
    list; hover to highlight on the map, click to zoom. Searches are encoded in

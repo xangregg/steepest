@@ -66,14 +66,14 @@ export function initMap(el, mode) {
     const barDiv = bg => `<div class="legend-bar" style="background:${bg}"></div>`;
     const rampBg = ramp => `linear-gradient(to right, ${ramp.join(',')})`;
     const ticks = `<div class="legend-ticks"><span>${Math.round(GRADE_MIN * 100)}%</span><span>${+((GRADE_MIN + GRADE_MAX) * 50).toFixed(1)}%</span><span>${Math.round(GRADE_MAX * 100)}%+</span></div>`;
-    const updateLegend = (m, rankMode = 'sustained') => {
+    const updateLegend = (m, rankMode = 'sustained', topN = 25) => {
         // Below the ticks and swatch-sized, so the % scale clearly doesn't
         // apply to the categorical grind color.
-        const grindRow = `<div class="legend-row legend-grind"><div class="legend-swatch" style="background:${GRIND_COLORS[m]};opacity:${GRIND_OPACITY}"></div><span class="legend-label">long grind (≥2%)</span></div>`;
+        const grindRow = `<div class="legend-row legend-grind"><div class="legend-swatch" style="background:${GRIND_COLORS[m]};opacity:${GRIND_OPACITY}"></div><span class="legend-label">long incline (≥2%)</span></div>`;
         legendDiv.innerHTML = rankMode === 'climb'
             ? `<div class="legend-title">grade</div>
-               <div class="legend-row">${barDiv(rampBg(RAMPS[m]))}<span class="legend-label">road's hardest climb</span></div>
-               <div class="legend-row">${barDiv(rampBg(RAMPS_ALT[m]))}<span class="legend-label">steep elsewhere</span></div>
+               <div class="legend-row">${barDiv(rampBg(RAMPS[m]))}<span class="legend-label">top ${topN} climbs</span></div>
+               <div class="legend-row">${barDiv(rampBg(RAMPS_ALT[m]))}<span class="legend-label">other steep</span></div>
                ${ticks}${grindRow}`
             : `<div class="legend-title">grade</div>
                <div class="legend-row">${barDiv(rampBg(RAMPS[m]))}<span class="legend-label">steepness</span></div>
@@ -385,7 +385,9 @@ export function drawRoads(map, ranked, windowM, mode, rankMode = 'sustained') {
         // at WIDTH_MIN at its own lowest altitude, so thin -> thick = uphill.
         const runs = [];
         for (const chunk of colorChunks(road, split)) {
-            const inClimb = isClimbMode && road.climb && chunk.kStart >= road.climb.i && chunk.kStart < road.climb.j;
+            // Red is reserved for the listed (top-N) roads' climbs, so map
+            // color mirrors the ranking; other roads' climbs stay violet.
+            const inClimb = isClimbMode && road.topClimb && road.climb && chunk.kStart >= road.climb.i && chunk.kStart < road.climb.j;
             const hue = inClimb ? 'climb' : 'other';
             const prev = runs[runs.length - 1];
             if (prev && prev.hue === hue && prev.kEnd === chunk.kStart) {

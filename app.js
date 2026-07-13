@@ -8,7 +8,6 @@ import { resample, analyzeRoad, segmentSustained, hardestClimb, grindMask, SAMPL
 import { initMap, drawRoads, renderList } from './render.js';
 import { searchKey, cacheGet, cachePut } from './cache.js';
 
-const LIST_MAX = 25;
 const byId = id => document.getElementById(id);
 
 const darkQuery = window.matchMedia('(prefers-color-scheme: dark)');
@@ -126,12 +125,14 @@ function render() {
         return;
     const windowM = Math.max(SAMPLE_STEP, +byId('window').value || 250);
     const minLen = Math.max(0, +byId('minlen').value || 0);
+    const listMax = Math.min(100, Math.max(1, +byId('listmax').value || 25));
     const rankMode = byId('rankmode').value;
     let ranked = state.roads
         .map(r => {
             r.segs = segmentSustained(r.samples, r.elev, windowM);
             r.value = r.segs ? r.segs.reduce((m, v) => Math.max(m, v), 0) : null;
             r.paint = null;
+            r.topClimb = false;
             return r;
         })
         .filter(r => r.value != null && r.length >= minLen);
@@ -164,12 +165,10 @@ function render() {
         }
     }
 
-    layer?.remove();
-    layer = drawRoads(map, ranked, windowM, mode(), rankMode);
-    updateLegend(mode(), rankMode);
-
     // The list dedupes by name (a road split into disjoint pieces keeps only
-    // its steepest piece); the map still shows every piece.
+    // its steepest piece); the map still shows every piece. In climb mode the
+    // listed roads' climbs wear red on the map; everything else steep is
+    // violet, so map color mirrors city-wide rank.
     const seen = new Set();
     const top = [];
     for (const r of ranked) {
@@ -177,9 +176,17 @@ function render() {
             continue;
         seen.add(r.name);
         top.push(r);
-        if (top.length >= LIST_MAX)
+        if (top.length >= listMax)
             break;
     }
+    if (rankMode === 'climb')
+        for (const r of top)
+            r.topClimb = true;
+
+    layer?.remove();
+    layer = drawRoads(map, ranked, windowM, mode(), rankMode);
+    updateLegend(mode(), rankMode, top.length);
+
     renderList(byId('road-list'), top, mode(), {
         rankMode,
         onHover: (road, on) => layer.highlight(road, on),
@@ -222,6 +229,7 @@ function updateHash(query) {
         r: String(+byId('radius').value),
         w: String(+byId('window').value),
         min: String(+byId('minlen').value),
+        n: String(+byId('listmax').value),
         mode: byId('rankmode').value,
     });
     history.replaceState(null, '', '#' + p.toString());
@@ -238,6 +246,7 @@ const onControlChange = () => {
 };
 byId('window').addEventListener('change', onControlChange);
 byId('minlen').addEventListener('change', onControlChange);
+byId('listmax').addEventListener('change', onControlChange);
 byId('rankmode').addEventListener('change', onControlChange);
 darkQuery.addEventListener('change', () => {
     setMode(mode());
@@ -254,6 +263,8 @@ if (params.get('q')) {
         byId('window').value = params.get('w');
     if (params.get('min'))
         byId('minlen').value = params.get('min');
+    if (params.get('n'))
+        byId('listmax').value = params.get('n');
     if (['sustained', 'climb'].includes(params.get('mode')))
         byId('rankmode').value = params.get('mode');
     void run();
