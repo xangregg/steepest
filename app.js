@@ -4,7 +4,7 @@
 
 import { parseLatLon, geocode, fetchRoads, prepareRoads } from './roads.js';
 import { elevatePoints } from './elevation.js';
-import { resample, analyzeRoad, segmentSustained, hardestClimb, SAMPLE_STEP } from './metrics.js';
+import { resample, analyzeRoad, segmentSustained, hardestClimb, grindMask, SAMPLE_STEP } from './metrics.js';
 import { initMap, drawRoads, renderList } from './render.js';
 import { searchKey, cacheGet, cachePut } from './cache.js';
 
@@ -20,9 +20,15 @@ let state = null;   // { roads, center, radiusM, label } after a successful run
 let layer = null;   // drawRoads handle
 let abort = null;
 
-function status(msg, isError = false) {
+// progress: undefined hides the bar, null shows an indeterminate sweep, a
+// number in [0,1] shows a determinate fill.
+function status(msg, { error = false, progress } = {}) {
     $('status').textContent = msg;
-    $('status').classList.toggle('error', isError);
+    $('status').classList.toggle('error', error);
+    const bar = $('progress');
+    bar.classList.toggle('active', progress !== undefined);
+    bar.classList.toggle('indeterminate', progress === null);
+    $('progress-fill').style.width = typeof progress === 'number' ? `${Math.round(progress * 100)}%` : '';
 }
 
 async function run(refresh = false) {
@@ -32,7 +38,7 @@ async function run(refresh = false) {
     $('go').disabled = true;
     try {
         const query = $('place').value.trim();
-        const radiusM = Math.min(15, Math.max(1, +$('radius').value || 10)) * 1000;
+        const radiusM = Math.min(15, Math.max(1, +$('radius').value || 6)) * 1000;
 
         status('Locating…');
         const center = parseLatLon(query) ?? await geocode(query, ctl.signal);
@@ -49,19 +55,38 @@ async function run(refresh = false) {
             }
         }
 
-        status('Fetching roads from OpenStreetMap… (can take a moment for big areas)');
-        const elements = await fetchRoads(center, radiusM, ctl.signal);
+        // Overpass answers with one big response: show elapsed time while the
+        // server thinks, then live megabytes once the download starts.
+        const t0 = Date.now();
+        let roadsNote = 'Fetching roads from OpenStreetMap…';
+        let bytes = 0;
+        const roadsStatus = () => status(
+            `${roadsNote} ${bytes ? `${(bytes / 1048576).toFixed(1)} MB received` : `${Math.round((Date.now() - t0) / 1000)} s`}`,
+            { progress: null });
+        roadsStatus();
+        const tick = setInterval(roadsStatus, 500);
+        let elements;
+        try {
+            elements = await fetchRoads(center, radiusM, {
+                signal: ctl.signal,
+                onBytes: b => { bytes = b; },
+                onNote: n => { roadsNote = n; },
+            });
+        } finally {
+            clearInterval(tick);
+        }
         const roads = prepareRoads(elements).map(r => ({ ...r, samples: resample(r.pts) }))
             .filter(r => r.samples.length >= 3); // need >= ~50 m to say anything
 
         if (!roads.length) throw new Error('No roads found in this area — try a larger radius.');
 
         const points = roads.flatMap(r => r.samples);
-        status(`Found ${roads.length.toLocaleString()} roads · sampling elevation…`);
+        status(`Found ${roads.length.toLocaleString()} roads · sampling elevation…`, { progress: null });
         const elevs = await elevatePoints(points, {
             signal: ctl.signal,
             onProgress: (done, total) =>
-                total && status(`Found ${roads.length.toLocaleString()} roads · elevation tiles ${done}/${total}…`),
+                total && status(`Found ${roads.length.toLocaleString()} roads · elevation tiles ${done} of ${total}`,
+                    { progress: done / total }),
         });
 
         let offset = 0;
@@ -79,7 +104,7 @@ async function run(refresh = false) {
         updateHash(query);
         render();
     } catch (err) {
-        if (err.name !== 'AbortError') status(err.message, true);
+        if (err.name !== 'AbortError') status(err.message, { error: true });
     } finally {
         if (abort === ctl) { abort = null; $('go').disabled = false; }
     }
@@ -115,6 +140,16 @@ function render() {
         ranked.sort((a, b) => b.value - a.value);
     }
 
+    // Grind acknowledgment: long (4× min length), mostly monotonic, >= 2%
+    // stretches get a categorical color where the steepness ramps are silent.
+    const grindSpan = Math.max(minLen, SAMPLE_STEP) * 4;
+    for (const r of ranked) {
+        if (r.grindSpan !== grindSpan) {
+            r.grind = grindMask(r.samples, r.elev, grindSpan);
+            r.grindSpan = grindSpan;
+        }
+    }
+
     layer?.remove();
     layer = drawRoads(map, ranked, windowM, mode(), rankMode);
     updateLegend(mode(), rankMode);
@@ -142,14 +177,13 @@ function render() {
 
     const doneMsg = `${ranked.length.toLocaleString()} roads ranked within ${(state.radiusM / 1000).toFixed(1)} km.`;
     if (state.cachedAt) {
-        const el = $('status');
-        el.classList.remove('error');
+        status(`${doneMsg} Using roads cached ${ago(state.cachedAt)} — `);
         const b = document.createElement('button');
         b.type = 'button';
         b.className = 'linklike';
         b.textContent = 'refresh from OSM';
         b.addEventListener('click', () => run(true));
-        el.replaceChildren(`${doneMsg} Using roads cached ${ago(state.cachedAt)} — `, b);
+        $('status').append(b);
     } else {
         status(`Done. ${doneMsg}`);
     }

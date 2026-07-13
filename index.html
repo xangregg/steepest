@@ -18,7 +18,7 @@
                    title="A town/city name (e.g. Pittsburgh, PA) or coordinates like 40.44, -79.99">
         </label>
         <label>Radius
-            <input id="radius" type="number" min="1" max="15" step="0.5" value="10"> km
+            <input id="radius" type="number" min="1" max="15" step="0.5" value="6"> km
         </label>
         <label>Rank by
             <select id="rankmode" title="Steepest sustained: best average grade over a stretch of the chosen length. Hardest climb: gain × grade of the road's biggest continuous climb (dips end a climb).">
@@ -36,6 +36,7 @@
         <button id="go" type="submit">Find steep roads</button>
     </form>
     <div id="status" role="status" aria-live="polite"></div>
+    <div id="progress"><div id="progress-fill"></div></div>
 </header>
 <main>
     <div id="map"></div>

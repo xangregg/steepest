@@ -115,6 +115,62 @@ export function sustainedGrade(samples, elev, windowM) {
 
 const DIP_ABS = 2;       // m of counter-slope always forgiven (DEM noise)
 const DIP_FRAC = 0.10;   // ... or up to this fraction of the total ascent
+export const GRIND_MIN_GRADE = 0.02; // a long grind counts from this average grade
+
+// "Grind" mask: segments belonging to any long (>= minSpan), mostly monotonic
+// (same counter-slope tolerance as climbs), >= GRIND_MIN_GRADE average stretch
+// in either direction. Too gentle to color as steep, too substantial to leave
+// invisible. Returns a Uint8Array over segments, or null when nothing
+// qualifies.
+export function grindMask(samples, elev, minSpan) {
+    const n = samples.length;
+    if (n < 2 || samples[n - 1].d < minSpan) return null;
+    const up = new Float64Array(n), down = new Float64Array(n);
+    for (let k = 1; k < n; k++) {
+        const de = elev[k] - elev[k - 1];
+        up[k] = up[k - 1] + Math.max(0, de);
+        down[k] = down[k - 1] + Math.max(0, -de);
+    }
+    const diff = new Int32Array(n + 1);
+    let any = false;
+    for (let i = 0; i < n - 1; i++) {
+        for (let j = i + 1; j < n; j++) {
+            const span = samples[j].d - samples[i].d;
+            if (span < minSpan) continue;
+            const net = elev[j] - elev[i];
+            const gain = Math.abs(net);
+            if (gain / span < GRIND_MIN_GRADE) continue;
+            const counter = net > 0 ? down[j] - down[i] : up[j] - up[i];
+            if (counter > Math.max(DIP_ABS, DIP_FRAC * (gain + counter))) continue;
+            diff[i]++;
+            diff[j]--;
+            any = true;
+        }
+    }
+    if (!any) return null;
+    const mask = new Uint8Array(n - 1);
+    let cover = 0;
+    for (let k = 0; k < n - 1; k++) {
+        cover += diff[k];
+        if (cover > 0) mask[k] = 1;
+    }
+    // Interval membership alone would mark a dead-flat tail whose interval
+    // qualifies via an attached hill. Trim each run's ends back to where the
+    // ground actually inclines; interior breathers stay covered.
+    const localOk = k => Math.abs(elev[k + 1] - elev[k]) / (samples[k + 1].d - samples[k].d) >= GRIND_MIN_GRADE / 2;
+    let a = -1;
+    for (let k = 0; k <= n - 1; k++) {
+        const on = k < n - 1 && mask[k];
+        if (on && a < 0) a = k;
+        else if (!on && a >= 0) {
+            let b = k - 1;
+            while (a <= b && !localOk(a)) mask[a++] = 0;
+            while (b >= a && !localOk(b)) mask[b--] = 0;
+            a = -1;
+        }
+    }
+    return mask.some(v => v) ? mask : null;
+}
 const TRIM_KEEP = 0.95;  // report the shortest interval keeping this share of the best score
 const EXT_MIN_GRADE = 0.05; // extend the reported extent over adjacent climbing this steep
 

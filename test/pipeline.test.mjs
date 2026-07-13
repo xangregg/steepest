@@ -20,6 +20,18 @@ const gateRoads = prepareRoads([
 ]);
 const chains = name => gateRoads.filter(r => r.name === name).length;
 
+// Two-way road becoming a divided road: three same-name ends meet where the
+// carriageways split. The through pair must stitch; the opposite carriageway
+// (a ~180° fold) must stay separate.
+const divided = prepareRoads([
+    way(8, 'Divided St', [[35, -76], [35.001, -76]]),                       // two-way approach
+    way(9, 'Divided St', [[35.001, -76], [35.002, -76.00005]]),             // carriageway onward
+    way(10, 'Divided St', [[35.002, -76.0003], [35.001, -76]]),             // carriageway returning
+]);
+const dividedLens = divided.map(r => r.pts.length).sort((x, y) => y - x);
+assert(divided.length === 2 && dividedLens[0] === 3,
+    `divided-road transition stitches through (${divided.length} chains)`);
+
 // A 2-node tunnel way between two ordinary ways must keep its flag through
 // stitching (the junction points get deduplicated when ways merge).
 const tunnelWay = way(6, 'Bore St', [[35.001, -77], [35.002, -77]]);
@@ -30,7 +42,7 @@ const bore = prepareRoads([
     way(7, 'Bore St', [[35.002, -77], [35.003, -77]]),
 ]);
 import { elevatePoints } from '../elevation.js';
-import { resample, analyzeRoad, segmentSustained, sustainedGrade, hardestClimb, SAMPLE_STEP } from '../metrics.js';
+import { resample, analyzeRoad, segmentSustained, sustainedGrade, hardestClimb, grindMask, SAMPLE_STEP } from '../metrics.js';
 
 const decodeTile = async url => {
     const res = await fetch(url);
@@ -103,6 +115,18 @@ assert(shoulder.score > 4.35 && shoulder.score < 5.2,
 const steady = hardestClimb(flat, mkElev(d => Math.min(d, 500) * 0.10));
 assert(Math.abs(steady.score - steady.gain ** 2 / steady.span) < 0.15,
     `steady climb: integral ≈ gain²/span (${steady.score.toFixed(2)} vs ${(steady.gain ** 2 / steady.span).toFixed(2)})`);
+
+// Grind mask: a 2.5% monotonic km qualifies (span threshold 1000 m), a 1% km
+// doesn't, and a rolling profile with real dips doesn't.
+const grind = grindMask(flat, mkElev(d => d * 0.025), 1000);
+assert(grind && grind.reduce((s, v) => s + v, 0) >= flat.length - 3, 'steady 2.5% km is a grind');
+assert(grindMask(flat, mkElev(d => d * 0.01), 1000) === null, '1% km is not a grind');
+assert(grindMask(flat, mkElev(d => d * 0.025 + 8 * Math.sin(d / 50)), 1000) === null,
+    'rolling profile with real dips is not a grind');
+// A dead-flat tail must not inherit the grind mark from an attached hill.
+const flatWall = grindMask(flat, mkElev(d => Math.max(0, d - 500) * 0.1), 1000);
+assert(flatWall && !flatWall[2] && !flatWall[10],
+    'flat half of flat-then-wall carries no grind mark');
 
 // Bridge interpolation: a 5% road crossing a 40 m-deep gorge on a bridge
 // (middle third flagged b) must read ~5%, not a cliff.

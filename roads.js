@@ -48,7 +48,8 @@ export async function geocode(query, signal) {
 }
 
 // All drivable roads within radiusM of center, as raw Overpass way elements.
-export async function fetchRoads(center, radiusM, signal) {
+// onBytes(n) streams download progress; onNote(msg) reports retries.
+export async function fetchRoads(center, radiusM, { signal, onBytes, onNote } = {}) {
     const q = `[out:json][timeout:90];
 way["highway"~"^(${HIGHWAY_RE})$"](around:${Math.round(radiusM)},${center.lat},${center.lon});
 out geom;`;
@@ -56,14 +57,35 @@ out geom;`;
     // Two passes over the mirrors with a pause between: public Overpass
     // instances rate-limit readily (HTTP 429), and a short wait usually clears it.
     for (let attempt = 0; attempt < 2; attempt++) {
-        if (attempt) await new Promise(res => setTimeout(res, 8000));
+        if (attempt) {
+            onNote?.('Overpass busy — retrying…');
+            await new Promise(res => setTimeout(res, 8000));
+        }
         for (const endpoint of OVERPASS_ENDPOINTS) {
             try {
                 const headers = { 'Content-Type': 'application/x-www-form-urlencoded' };
                 if (typeof window === 'undefined') headers['User-Agent'] = 'steepest-roads/1.0 (dev test)';
                 const res = await fetch(endpoint, { method: 'POST', headers, body: 'data=' + encodeURIComponent(q), signal });
                 if (!res.ok) throw new Error(`Overpass HTTP ${res.status}`);
-                const json = await res.json();
+                let text;
+                if (res.body?.getReader) {
+                    // Stream the body so the UI can show live download progress.
+                    const reader = res.body.getReader();
+                    const decoder = new TextDecoder();
+                    let received = 0;
+                    text = '';
+                    for (;;) {
+                        const { done, value } = await reader.read();
+                        if (done) break;
+                        received += value.length;
+                        text += decoder.decode(value, { stream: true });
+                        onBytes?.(received);
+                    }
+                    text += decoder.decode();
+                } else {
+                    text = await res.text();
+                }
+                const json = JSON.parse(text); // an HTML error page here throws -> retry
                 return json.elements ?? [];
             } catch (err) {
                 if (err.name === 'AbortError') throw err;
@@ -133,21 +155,23 @@ function interiorRef(pts, atStart) {
     return ordered[ordered.length - 1];
 }
 
-// Does travel flow roughly straight through the join, rather than turning a
-// corner? Distinct streets that share a (often TIGER-mangled) name usually
-// meet at right angles; a continuous road carries on.
-function straightThrough(wa, aAtStart, wb, bAtStart, joinPt) {
+// How sharply does travel turn passing through the join? Distinct streets
+// that share a (often TIGER-mangled) name usually meet at right angles; a
+// continuous road carries on nearly straight.
+function turnAngle(wa, aAtStart, wb, bAtStart, joinPt) {
     const dirIn = bearing(interiorRef(wa.pts, aAtStart), joinPt);
     const dirOut = bearing(joinPt, interiorRef(wb.pts, bAtStart));
     let diff = Math.abs(dirIn - dirOut);
     if (diff > Math.PI) diff = 2 * Math.PI - diff;
-    return diff <= MAX_TURN;
+    return diff;
 }
 
-// Repeatedly join two ways whose endpoints coincide — but only where exactly
-// two way-ends meet (never guess at a junction of three+ pieces) and only
-// where the bearing continues through the join (never chain different streets
-// that happen to share a name around a corner).
+// Repeatedly join two ways whose endpoints coincide — where two way-ends meet
+// cleanly, or where three meet and one pair clearly continues straight (a
+// two-way road becoming a divided road: the through-carriageway chains on,
+// the U-fold between opposite carriageways fails the bearing gate). The
+// bearing gate also stops different streets that happen to share a name from
+// chaining around a corner.
 function stitchGroup(ways) {
     let merged = true;
     while (merged && ways.length > 1) {
@@ -162,12 +186,21 @@ function stitchGroup(ways) {
         });
         const conflict = (x, y) => !!(x && y && x !== y);
         for (const list of ends.values()) {
-            if (list.length !== 2 || list[0].i === list[1].i) continue;
-            const [a, b] = list;
+            if (list.length < 2 || list.length > 3) continue;
+            let a = null, b = null, bestTurn = Infinity;
+            for (let x = 0; x < list.length; x++) {
+                for (let y = x + 1; y < list.length; y++) {
+                    const pa = list[x], pb = list[y];
+                    if (pa.i === pb.i) continue;
+                    const wx = ways[pa.i], wy = ways[pb.i];
+                    if (conflict(wx.base, wy.base) || conflict(wx.nameType, wy.nameType)) continue;
+                    const pt = pa.atStart ? wx.pts[0] : wx.pts[wx.pts.length - 1];
+                    const turn = turnAngle(wx, pa.atStart, wy, pb.atStart, pt);
+                    if (turn <= MAX_TURN && turn < bestTurn) { bestTurn = turn; a = pa; b = pb; }
+                }
+            }
+            if (!a) continue;
             const wa = ways[a.i], wb = ways[b.i];
-            if (conflict(wa.base, wb.base) || conflict(wa.nameType, wb.nameType)) continue;
-            const joinPt = a.atStart ? wa.pts[0] : wa.pts[wa.pts.length - 1];
-            if (!straightThrough(wa, a.atStart, wb, b.atStart, joinPt)) continue;
             const head = a.atStart ? [...wa.pts].reverse() : wa.pts;
             const tail = b.atStart ? wb.pts : [...wb.pts].reverse();
             const pts = [...head, ...tail.slice(1)];

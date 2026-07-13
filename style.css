@@ -74,6 +74,28 @@ header h1 {
 #go:disabled { opacity: 0.55; cursor: default; }
 #status { min-height: 1.2em; margin-top: 6px; font-size: 0.8rem; color: var(--muted); }
 #status.error { color: var(--accent); }
+#progress {
+    display: none;
+    width: 280px;
+    height: 3px;
+    margin-top: 4px;
+    background: var(--hairline);
+    border-radius: 2px;
+    overflow: hidden;
+}
+#progress.active { display: block; }
+#progress-fill {
+    height: 100%;
+    width: 0;
+    background: var(--accent);
+    border-radius: 2px;
+    transition: width 0.2s;
+}
+#progress.indeterminate #progress-fill { width: 30%; animation: progress-slide 1.2s linear infinite; }
+@keyframes progress-slide {
+    from { margin-left: -30%; }
+    to { margin-left: 100%; }
+}
 .linklike {
     padding: 0;
     font: inherit;
@@ -157,6 +179,8 @@ main { flex: 1; display: flex; min-height: 0; }
 .legend-bar { width: 130px; height: 8px; border-radius: 4px; }
 .legend-row { display: flex; align-items: center; gap: 6px; margin-bottom: 3px; }
 .legend-label { font-size: 10px; color: var(--muted); white-space: nowrap; }
+.legend-grind { margin: 6px 0 0; padding-top: 5px; border-top: 1px solid var(--hairline); }
+.legend-swatch { width: 16px; height: 8px; border-radius: 2px; flex: none; }
 .legend-ticks { display: flex; justify-content: space-between; margin-top: 2px; width: 130px; font-variant-numeric: tabular-nums; }
 
 .leaflet-popup-content-wrapper, .leaflet-popup-tip { background: var(--surface); color: var(--ink); }

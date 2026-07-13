@@ -19,6 +19,13 @@ export const RAMPS_ALT = {
     dark: ['#332057', '#452e85', '#5940a3', '#7657c4', '#9273d8', '#b096e5', '#d3c3f2'],
 };
 
+// Categorical (non-gradient) color for "grind" stretches — long, mostly
+// monotonic inclines of >= 2%. Drawn as a continuous underlay beneath the
+// steepness ribbons: a quiet medium gray, mostly obscured where steep colors
+// sit on top, peeking out where the grind ribbon runs wider.
+export const GRIND_COLORS = { light: '#9b9b93', dark: '#75756d' };
+const GRIND_OPACITY = 0.55; // translucent: lighter, and the basemap shows through
+
 const BASEMAPS = {
     light: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
     dark: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
@@ -53,15 +60,21 @@ export function initMap(el, mode) {
     legend.onAdd = () => (legendDiv = L.DomUtil.create('div', 'legend'));
     legend.addTo(map);
 
-    const barDiv = ramp => `<div class="legend-bar" style="background:linear-gradient(to right, ${ramp.join(',')})"></div>`;
+    const barDiv = bg => `<div class="legend-bar" style="background:${bg}"></div>`;
+    const rampBg = ramp => `linear-gradient(to right, ${ramp.join(',')})`;
     const ticks = `<div class="legend-ticks"><span>${Math.round(GRADE_MIN * 100)}%</span><span>${+((GRADE_MIN + GRADE_MAX) * 50).toFixed(1)}%</span><span>${Math.round(GRADE_MAX * 100)}%+</span></div>`;
     const updateLegend = (m, rankMode = 'sustained') => {
+        // Below the ticks and swatch-sized, so the % scale clearly doesn't
+        // apply to the categorical grind color.
+        const grindRow = `<div class="legend-row legend-grind"><div class="legend-swatch" style="background:${GRIND_COLORS[m]};opacity:${GRIND_OPACITY}"></div><span class="legend-label">long grind (≥2%)</span></div>`;
         legendDiv.innerHTML = rankMode === 'climb'
             ? `<div class="legend-title">grade</div>
-               <div class="legend-row">${barDiv(RAMPS[m])}<span class="legend-label">hardest climb</span></div>
-               <div class="legend-row">${barDiv(RAMPS_ALT[m])}<span class="legend-label">other steep</span></div>
-               ${ticks}`
-            : `<div class="legend-title">grade</div>${barDiv(RAMPS[m])}${ticks}`;
+               <div class="legend-row">${barDiv(rampBg(RAMPS[m]))}<span class="legend-label">hardest climb</span></div>
+               <div class="legend-row">${barDiv(rampBg(RAMPS_ALT[m]))}<span class="legend-label">other steep</span></div>
+               ${ticks}${grindRow}`
+            : `<div class="legend-title">grade</div>
+               <div class="legend-row">${barDiv(rampBg(RAMPS[m]))}<span class="legend-label">steepness</span></div>
+               ${ticks}${grindRow}`;
     };
     updateLegend(mode);
 
@@ -230,8 +243,10 @@ export function drawRoads(map, ranked, windowM, mode, rankMode = 'sustained') {
         if (!e) return;
         e.skeleton.setStyle({ opacity: on ? 0.55 : 0 });
         const emphasizeClimb = isClimbMode && road.climb;
-        for (const { poly, inClimb } of e.chunks) {
-            if (emphasizeClimb && !inClimb) poly.setStyle({ opacity: 0, fillOpacity: on ? 0.45 : 1 });
+        for (const { poly, inClimb, isGrind } of e.chunks) {
+            // Grinds stay translucent; hover just fattens their outline.
+            if (isGrind) poly.setStyle({ opacity: on ? GRIND_OPACITY : 0, fillOpacity: GRIND_OPACITY });
+            else if (emphasizeClimb && !inClimb) poly.setStyle({ opacity: 0, fillOpacity: on ? 0.45 : 1 });
             // The outline stroke (same color) fattens the ribbon when shown.
             else poly.setStyle({ opacity: on ? 1 : 0, fillOpacity: 1 });
         }
@@ -247,17 +262,52 @@ export function drawRoads(map, ranked, windowM, mode, rankMode = 'sustained') {
         let clickK = null; // set by a map click just before the bound popup opens
         const geom = roadGeometry(map, road.samples);
         const split = isClimbMode && road.climb ? new Set([road.climb.i, road.climb.j]) : null;
+
+        // Grind underlay: one continuous ribbon per grind run, drawn beneath
+        // the steepness ribbons. Its altitude-flare width accumulates over the
+        // whole run — steep overlays sit on top without breaking it.
+        if (road.grind) {
+            let a = -1;
+            for (let k = 0; k <= road.grind.length; k++) {
+                const on = k < road.grind.length && road.grind[k];
+                if (on && a < 0) a = k;
+                else if (!on && a >= 0) {
+                    const kStart = a, kEnd = k; // sample range of the run
+                    let base = Infinity;
+                    for (let m = kStart; m <= kEnd; m++) base = Math.min(base, road.elev[m]);
+                    const halfAt = m => (WIDTH_MIN + WIDTH_PER_M * (road.elev[m] - base)) / 2;
+                    let best = 0;
+                    for (let m = kStart; m < kEnd; m++) best = Math.max(best, road.segs[m]);
+                    const c = GRIND_COLORS[mode];
+                    const poly = L.polygon(ribbonRing(geom, kStart, kEnd, halfAt), {
+                        fillColor: c, fillOpacity: GRIND_OPACITY,
+                        stroke: true, color: c, weight: LINE_WEIGHT, opacity: 0,
+                    });
+                    poly.on('click', e => { clickK = nearestSegIndex(road, e.latlng); });
+                    poly.bindPopup(() => {
+                        const kk = clickK;
+                        clickK = null;
+                        return popupHtml(road, best, windowM, kk);
+                    });
+                    poly.addTo(fg);
+                    chunks.push({ poly, inClimb: false, isGrind: true, kStart, kEnd, halfAt });
+                    a = -1;
+                }
+            }
+        }
+
         // Group contiguous same-hue chunks into runs; each run's width starts
         // at WIDTH_MIN at its own lowest altitude, so thin -> thick = uphill.
         const runs = [];
         for (const chunk of colorChunks(road, split)) {
             const inClimb = isClimbMode && road.climb && chunk.kStart >= road.climb.i && chunk.kStart < road.climb.j;
+            const hue = inClimb ? 'climb' : 'other';
             const prev = runs[runs.length - 1];
-            if (prev && prev.inClimb === inClimb && prev.kEnd === chunk.kStart) {
+            if (prev && prev.hue === hue && prev.kEnd === chunk.kStart) {
                 prev.kEnd = chunk.kEnd;
                 prev.items.push(chunk);
             } else {
-                runs.push({ inClimb, kStart: chunk.kStart, kEnd: chunk.kEnd, items: [chunk] });
+                runs.push({ hue, inClimb, kStart: chunk.kStart, kEnd: chunk.kEnd, items: [chunk] });
             }
         }
         for (const run of runs) {
