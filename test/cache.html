@@ -11,6 +11,9 @@
 </head>
 <body>
 <div id="result">phase 1: first load (network)…</div>
+<!-- The hash is the app's search-parameter store, not an anchor id.
+     suppress HtmlUnknownAnchorTarget -->
+<!--suppress HtmlUnknownAnchorTarget -->
 <iframe id="f" src="../index.html#q=Brevard%2C+NC&r=3&w=100&min=200"></iframe>
 <!-- Points at a never-responding socket to hold this page's load event open,
      so headless Chrome's - -screenshot waits for - -timeout instead of firing
