@@ -65,6 +65,31 @@ no database, so it hosts happily on GitHub Pages.
    list; hover to highlight on the map, click to zoom. Searches are encoded in
    the URL hash, so results are shareable. Light and dark themes follow the OS.
 
+## Code tour
+
+- `roads.js` — geocoding (Nominatim, localStorage-cached), the streaming
+  Overpass fetch with mirror retries, and way stitching: same-name ways merge
+  where travel continues straight through the join (bearing gate), TIGER
+  `name_base`/`name_type` tags must agree, and three-end junctions (a two-way
+  road becoming a divided road) merge their straightest pair. Bridge/tunnel
+  points are flagged for elevation correction.
+- `elevation.js` — terrarium PNG tile decoding and bilinear sampling, with a
+  module-level tile cache and a pluggable decoder (canvas in the browser,
+  pngjs in Node tests).
+- `metrics.js` — all profile math; see its header for conventions. Tunable
+  thresholds live as documented constants at the top of each section.
+- `render.js` — ribbon drawing, hue rules, legend, popups; see its header for
+  the full rendering model.
+- `cache.js` — IndexedDB persistence of processed roads (versioned; bump
+  `VERSION_TAG` when the processed shape or pipeline output changes).
+- `app.js` — UI wiring and orchestration; its header documents the road
+  object's field lifecycle. Also exposes the `window.steepest` dev hook for
+  live style experiments.
+- `test/pipeline.test.mjs` — unit checks plus a live end-to-end run (real
+  Nominatim/Overpass/tiles). `test/render.html` is a visual fixture of
+  synthetic roads exercising every rendering rule; `test/cache.html` and
+  `test/cache-unit.html` cover the IndexedDB cache in a real browser.
+
 ## Running locally
 
 Browsers block ES modules from `file://`, so serve the directory:

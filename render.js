@@ -1,6 +1,19 @@
-// Map + sidebar rendering. Steepness uses one single-hue sequential red ramp
-// (light = flat recedes into the basemap, dark = steep) in light mode, and the
-// reverse-lightness equivalent on the dark basemap.
+// Map + sidebar rendering.
+//
+// Roads draw as mitered ribbon polygons (not stroked lines), split into
+// constant-color chunks. Color: sequential ramps over a fixed 5–25 % grade
+// domain — in climb mode, red for the listed top-N roads' climbs and violet
+// for other steep stretches; below 5 % nothing is painted (short crest gaps
+// close at the palest step). Each segment's color is capped at its own local
+// grade so paint never claims steepness the ground doesn't have. Width flares
+// with altitude above each run's base (thin -> thick = uphill). Ribbon
+// geometry densifies through the original OSM vertices wherever the road
+// genuinely curves between the ~25 m samples, so hairpins draw as hairpins,
+// and everything rebuilds on zoom (pixel widths). Long gentle inclines render
+// as one continuous translucent amber ribbon per run in a dedicated map pane
+// beneath the ribbons (pane-level opacity, so overlaps never double-darken).
+// The exported ramps/constants double as the live-experiment surface (see the
+// window.steepest hook in app.js).
 
 import { haversine, SAMPLE_STEP } from './metrics.js';
 
@@ -144,10 +157,10 @@ function nearestSegIndex(road, latlng) {
     return Math.min(best, road.samples.length - 2);
 }
 
-// Merge consecutive segments that land in the same color bin (~1% grade) into
-// one polyline, so a road becomes a handful of constant-color chunks rather
-// than one segment per 25 m. Segments below GRADE_MIN are skipped entirely —
-// the basemap's own road rendering shows through with no highlight.
+// Merge consecutive segments that land in the same color bin (~1% grade), so
+// a road becomes a handful of constant-color chunks rather than one ribbon
+// per 25 m segment. Segments below GRADE_MIN are skipped entirely — the
+// basemap's own road rendering shows through with no highlight.
 // Color follows road.paint when present (climb mode floors a winning climb's
 // segments at the climb's average grade so its flats stay visible); the
 // chunk's reported value stays the honest local grade.
@@ -313,8 +326,7 @@ export function drawRoads(map, ranked, windowM, mode, rankMode = 'sustained') {
         map.createPane('inclines').style.zIndex = 399;
     map.getPane('inclines').style.opacity = GRIND_OPACITY;
     map._inclineRenderer ??= L.canvas({ pane: 'inclines', padding: 0.3 });
-    const underlay = L.layerGroup();
-    const group = L.layerGroup();
+    const group = L.layerGroup().addTo(map);
     const lines = new Map(); // road -> { skeleton, chunks:[{line, inClimb}], steepest, steepestClimb }
     const isClimbMode = rankMode === 'climb';
 
@@ -352,11 +364,29 @@ export function drawRoads(map, ranked, windowM, mode, rankMode = 'sustained') {
         const lastK = road.samples.length - 1;
         // Per-sample half-widths interpolate across densified vertices.
         const widthFor = halfAt => v => halfAt(v.k) * (1 - v.f) + halfAt(Math.min(v.k + 1, lastK)) * v.f;
+        // A run's width: WIDTH_MIN at its lowest altitude, +WIDTH_PER_M per
+        // meter above it, capped — so thin -> thick reads as uphill.
+        const runWidthAt = (kStart, kEnd) => {
+            let base = Infinity;
+            for (let k = kStart; k <= kEnd; k++)
+                base = Math.min(base, road.elev[k]);
+            return widthFor(k => Math.min(WIDTH_MIN + WIDTH_PER_M * (road.elev[k] - base), WIDTH_MAX) / 2);
+        };
+        const wirePopup = (poly, stretchValue) => {
+            // Click handler registered before bindPopup so it runs first and
+            // the popup content can use the clicked segment.
+            poly.on('click', e => { clickK = nearestSegIndex(road, e.latlng); });
+            poly.bindPopup(() => {
+                const k = clickK;
+                clickK = null;
+                return popupHtml(road, stretchValue, windowM, k);
+            });
+        };
         const split = isClimbMode && road.climb ? new Set([road.climb.i, road.climb.j]) : null;
 
-        // Grind underlay: one continuous ribbon per grind run, drawn beneath
-        // the steepness ribbons. Its altitude-flare width accumulates over the
-        // whole run — steep overlays sit on top without breaking it.
+        // Long-incline underlay: one continuous ribbon per incline run. Its
+        // altitude-flare width accumulates over the whole run; the pane keeps
+        // it beneath the steepness ribbons, which overlay without breaking it.
         if (road.grind) {
             let a = -1;
             for (let k = 0; k <= road.grind.length; k++) {
@@ -366,15 +396,11 @@ export function drawRoads(map, ranked, windowM, mode, rankMode = 'sustained') {
                 }
                 else if (!on && a >= 0) {
                     const kStart = a, kEnd = k; // sample range of the run
-                    let base = Infinity;
-                    for (let m = kStart; m <= kEnd; m++)
-                        base = Math.min(base, road.elev[m]);
-                    const halfAt = m => Math.min(WIDTH_MIN + WIDTH_PER_M * (road.elev[m] - base), WIDTH_MAX) / 2;
                     let best = 0;
                     for (let m = kStart; m < kEnd; m++)
                         best = Math.max(best, road.segs[m]);
                     const c = GRIND_COLORS[mode];
-                    const widthAt = widthFor(halfAt);
+                    const widthAt = runWidthAt(kStart, kEnd);
                     const iStart = dp.sampleIdx[kStart], iEnd = dp.sampleIdx[kEnd];
                     const poly = L.polygon(ribbonRing(geom, dp.verts, iStart, iEnd, widthAt), {
                         pane: 'inclines', renderer: map._inclineRenderer,
@@ -382,17 +408,8 @@ export function drawRoads(map, ranked, windowM, mode, rankMode = 'sustained') {
                         fillColor: c, fillOpacity: 1,
                         stroke: true, color: c, weight: LINE_WEIGHT, opacity: 0,
                     });
-                    poly.on('click', e => { clickK = nearestSegIndex(road, e.latlng); });
-                    poly.bindPopup(() => {
-                        const kk = clickK;
-                        clickK = null;
-                        return popupHtml(road, best, windowM, kk);
-                    });
-                    // Lives in the global underlay (not the road's feature
-                    // group), so it needs its own hover wiring.
-                    poly.on('mouseover', () => setHighlight(road, true));
-                    poly.on('mouseout', () => setHighlight(road, false));
-                    poly.addTo(underlay);
+                    wirePopup(poly, best);
+                    poly.addTo(fg);
                     chunks.push({ poly, inClimb: false, isGrind: true, iStart, iEnd, widthAt });
                     a = -1;
                 }
@@ -417,11 +434,7 @@ export function drawRoads(map, ranked, windowM, mode, rankMode = 'sustained') {
             }
         }
         for (const run of runs) {
-            let base = Infinity;
-            for (let k = run.kStart; k <= run.kEnd; k++)
-                base = Math.min(base, road.elev[k]);
-            const halfAt = k => Math.min(WIDTH_MIN + WIDTH_PER_M * (road.elev[k] - base), WIDTH_MAX) / 2;
-            const widthAt = widthFor(halfAt);
+            const widthAt = runWidthAt(run.kStart, run.kEnd);
             for (const chunk of run.items) {
                 const c = (isClimbMode && !run.inClimb ? colorAlt : color)(chunk.paint);
                 const iStart = dp.sampleIdx[chunk.kStart], iEnd = dp.sampleIdx[chunk.kEnd];
@@ -432,13 +445,7 @@ export function drawRoads(map, ranked, windowM, mode, rankMode = 'sustained') {
                     // Invisible outline; highlight raises its opacity to fatten the ribbon.
                     stroke: true, color: c, weight: LINE_WEIGHT, opacity: 0,
                 });
-                // Registered before bindPopup so it runs first on click.
-                poly.on('click', e => { clickK = nearestSegIndex(road, e.latlng); });
-                poly.bindPopup(() => {
-                    const k = clickK;
-                    clickK = null;
-                    return popupHtml(road, chunk.value, windowM, k);
-                });
+                wirePopup(poly, chunk.value);
                 poly.addTo(fg);
                 chunks.push({ poly, inClimb: run.inClimb, iStart, iEnd, widthAt });
                 if (!steepest || chunk.paint > steepest.chunkPaint) {
@@ -456,8 +463,6 @@ export function drawRoads(map, ranked, windowM, mode, rankMode = 'sustained') {
         fg.addTo(group);
         lines.set(road, { skeleton, chunks, steepest, steepestClimb, dp });
     }
-    underlay.addTo(map);
-    group.addTo(map);
 
     // Pixel-based widths mean the ribbon geometry is zoom-dependent.
     const rebuild = () => {
@@ -473,7 +478,6 @@ export function drawRoads(map, ranked, windowM, mode, rankMode = 'sustained') {
 
     return {
         group,
-        underlay,
         highlight: setHighlight,
         focus(road) {
             const e = lines.get(road);
@@ -488,7 +492,6 @@ export function drawRoads(map, ranked, windowM, mode, rankMode = 'sustained') {
         },
         remove() {
             map.off('zoomend', rebuild);
-            map.removeLayer(underlay);
             map.removeLayer(group);
         },
     };

@@ -1,4 +1,8 @@
-// Geometry resampling and the sustained-grade steepness metric.
+// Road profile math: arc-length resampling, bridge/tunnel deck elevations,
+// smoothing, sustained-window grades, hardest-climb extraction, and
+// long-incline masking. Conventions: grades are fractions (0.08 = 8 %),
+// distances are meters, and elevations are smoothed before any metric runs.
+// Length thresholds snap to the nearest whole ~SAMPLE_STEP segment.
 
 export const SAMPLE_STEP = 25;      // m between elevation samples along a road
 
@@ -152,7 +156,23 @@ export function sustainedGrade(samples, elev, windowM) {
 
 const DIP_ABS = 2;       // m of counter-slope always forgiven (DEM noise)
 const DIP_FRAC = 0.10;   // ... or up to this fraction of the total ascent
-export const GRIND_MIN_GRADE = 0.02; // a long grind counts from this average grade
+export const GRIND_MIN_GRADE = 0.02; // a long incline counts from this average grade
+
+// Cumulative ascent/descent prefixes, for testing whether an interval is
+// "mostly monotonic" as traveled (shared by climbs and long inclines).
+function ascentPrefixes(elev) {
+    const n = elev.length;
+    const up = new Float64Array(n), down = new Float64Array(n);
+    for (let k = 1; k < n; k++) {
+        const de = elev[k] - elev[k - 1];
+        up[k] = up[k - 1] + Math.max(0, de);
+        down[k] = down[k - 1] + Math.max(0, -de);
+    }
+    return { up, down };
+}
+
+// Interior counter-slope beyond the tolerance disqualifies an interval.
+const dipTooBig = (gain, counter) => counter > Math.max(DIP_ABS, DIP_FRAC * (gain + counter));
 
 // "Grind" mask: segments belonging to any long (>= minSpan), mostly monotonic
 // (same counter-slope tolerance as climbs), >= GRIND_MIN_GRADE average stretch
@@ -165,12 +185,7 @@ export function grindMask(samples, elev, minSpan) {
     const bound = minSpan - SAMPLE_STEP / 2;
     if (n < 2 || samples[n - 1].d < bound)
         return null;
-    const up = new Float64Array(n), down = new Float64Array(n);
-    for (let k = 1; k < n; k++) {
-        const de = elev[k] - elev[k - 1];
-        up[k] = up[k - 1] + Math.max(0, de);
-        down[k] = down[k - 1] + Math.max(0, -de);
-    }
+    const { up, down } = ascentPrefixes(elev);
     const diff = new Int32Array(n + 1);
     let any = false;
     for (let i = 0; i < n - 1; i++) {
@@ -183,7 +198,7 @@ export function grindMask(samples, elev, minSpan) {
             if (gain / span < GRIND_MIN_GRADE)
                 continue;
             const counter = net > 0 ? down[j] - down[i] : up[j] - up[i];
-            if (counter > Math.max(DIP_ABS, DIP_FRAC * (gain + counter)))
+            if (dipTooBig(gain, counter))
                 continue;
             diff[i]++;
             diff[j]--;
@@ -241,12 +256,7 @@ export function hardestClimb(samples, elev, extMinGrade = EXT_MIN_GRADE) {
     const n = samples.length;
     if (n < 2)
         return null;
-    const up = new Float64Array(n), down = new Float64Array(n);
-    for (let k = 1; k < n; k++) {
-        const de = elev[k] - elev[k - 1];
-        up[k] = up[k - 1] + Math.max(0, de);
-        down[k] = down[k - 1] + Math.max(0, -de);
-    }
+    const { up, down } = ascentPrefixes(elev);
     // net > 0: climb traveling forward, counter-slope is forward descent.
     // net < 0: climb traveling backward, counter-slope is forward ascent.
     const evalPair = (i, j) => {
@@ -255,7 +265,7 @@ export function hardestClimb(samples, elev, extMinGrade = EXT_MIN_GRADE) {
             return null;
         const gain = Math.abs(net);
         const counter = net > 0 ? down[j] - down[i] : up[j] - up[i];
-        if (counter > Math.max(DIP_ABS, DIP_FRAC * (gain + counter)))
+        if (dipTooBig(gain, counter))
             return null;
         const span = samples[j].d - samples[i].d;
         return { score: (gain * gain) / span, gain, span, grade: gain / span, i, j, dir: Math.sign(net) };

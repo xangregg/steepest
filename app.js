@@ -1,6 +1,19 @@
 // Wires the UI to the pipeline: geocode -> Overpass roads -> terrain-tile
-// elevations -> sustained grades -> map + ranked list. Everything runs
-// client-side.
+// elevations -> metrics -> map + ranked list. Everything runs client-side;
+// processed results cache in IndexedDB so repeat searches skip the network.
+//
+// A road object accumulates fields as it moves through the pipeline:
+//   pts       original OSM polyline [{lat, lon, b?}] (b = bridge/tunnel)
+//   samples   ~25 m arc-length resampling [{lat, lon, d, b?}] (d = meters along road)
+//   elev      smoothed, bridge-corrected elevation per sample
+//   length, eMin, eMax
+// and per render (cheap, recomputed on control changes):
+//   segs      per-segment sustained-window grade (Float64Array)
+//   value     max of segs — the sustained-mode ranking value
+//   climb     hardest climb {score, gain, span, grade, i, j, dir} (memoized)
+//   grind     long-incline mask over segments (memoized per span)
+//   paint     color values; climb mode floors the climb extent for continuity
+//   topClimb  road is in the ranked list, so its climb wears red
 
 import { parseLatLon, geocode, fetchRoads, prepareRoads } from './roads.js';
 import { elevatePoints } from './elevation.js';

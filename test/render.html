@@ -54,7 +54,7 @@
             const t = i / 39;
             return { lat: 35.23 + t * 0.009, lon: -82.7175 + 0.0012 * Math.sin(t * Math.PI * 5) };
         }), d => 40 * Math.sin(d / 90)),
-        // Long gentle monotonic incline with a steep mid-pitch: the gray grind
+        // Long gentle monotonic incline with a steep mid-pitch: the amber incline
         // underlay must run continuously beneath the steep overlay, its width
         // flare unbroken.
         mkRoad('Grind + pitch', 0.02, d => d < 400 ? d * 0.025 : d < 600 ? 10 + (d - 400) * 0.08 : 26 + (d - 600) * 0.025),
@@ -63,8 +63,8 @@
         // darken (pane-level opacity fades the union once).
         mkRoad('Grind twin', 0.02005, d => d * 0.025),
         // Crosses the Grind + pitch road: its steep color must render on top
-        // of the other road's gray grind underlay even though it ranks lower
-        // (all grinds draw in one pass beneath all steep ribbons).
+        // of the other road's amber incline underlay even though it ranks
+        // lower (inclines live in a pane below the steep ribbons).
         mkRoadPts('Crosser 6%', [{ lat: 35.2346, lon: -82.7225 }, { lat: 35.2346, lon: -82.7175 }], d => d * 0.06),
         // Lombard-style switchbacks: original vertices every ~8 m, far denser
         // than the 25 m samples, so drawn ribbons must densify through the
@@ -106,9 +106,7 @@
         l.fire('click', { latlng: target });
         clicked = true;
     };
-    // Steep chunks first, then the grind underlay (both are clickable in the app).
     layer.group.eachLayer(fg => fg.eachLayer(tryClick));
-    layer.underlay.eachLayer(tryClick);
     renderList(document.getElementById('road-list'), roads, 'light', {
         onHover: (r, on) => layer.highlight(r, on),
         onClick: r => layer.focus(r),
