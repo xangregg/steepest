@@ -115,7 +115,7 @@ export function sustainedGrade(samples, elev, windowM) {
 
 const DIP_ABS = 2;       // m of counter-slope always forgiven (DEM noise)
 const DIP_FRAC = 0.10;   // ... or up to this fraction of the total ascent
-const TRIM_KEEP = 0.99;  // report the shortest interval keeping this share of the best score
+const TRIM_KEEP = 0.95;  // report the shortest interval keeping this share of the best score
 const EXT_MIN_GRADE = 0.05; // extend the reported extent over adjacent climbing this steep
 
 // Hardest climb on the road, in either travel direction. The extent is found

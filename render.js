@@ -165,13 +165,15 @@ function colorChunks(road, splitAt) {
     return chunks;
 }
 
-const LINE_WEIGHT = 3.5; // ribbon width in px
+const LINE_WEIGHT = 3.5;  // highlight outline weight in px
+const WIDTH_MIN = 3.5;    // px ribbon width at a run's lowest altitude
+const WIDTH_PER_M = 0.15; // extra px of width per meter of altitude above the run's base
 
-// Per-sample left/right ribbon edge points for a whole road at the current
-// zoom, offset along angle-bisector (miter) normals in projected pixel space.
-// Chunks slice these shared vertices, so adjacent chunks meet edge-to-edge
-// with no cap overlap and no wedge gaps, whatever the join angle.
-function ribbonOffsets(map, samples, halfPx) {
+// Road-wide projected geometry at the current zoom: pixel points plus a miter
+// (angle-bisector) normal and clamp scale at every sample. Chunks offset from
+// these shared normals, so adjacent chunks meet edge-to-edge with no cap
+// overlap and no wedge gaps, whatever the join angle.
+function roadGeometry(map, samples) {
     const zoom = map.getZoom();
     const pts = samples.map(s => map.project([s.lat, s.lon], zoom));
     const n = pts.length;
@@ -181,28 +183,34 @@ function ribbonOffsets(map, samples, halfPx) {
         const len = Math.hypot(dx, dy) || 1;
         dirs.push({ x: dx / len, y: dy / len });
     }
-    const left = [], right = [];
+    const normals = [];
     for (let i = 0; i < n; i++) {
         const a = dirs[Math.max(0, i - 1)], b = dirs[Math.min(n - 2, i)];
         let mx = a.x + b.x, my = a.y + b.y;
         const mlen = Math.hypot(mx, my);
-        let nx, ny, w;
         if (mlen < 1e-9) { // 180° hairpin: fall back to the previous normal
-            nx = -a.y; ny = a.x; w = halfPx;
+            normals.push({ nx: -a.y, ny: a.x, scale: 1 });
         } else {
             mx /= mlen; my /= mlen;
-            nx = -my; ny = mx;
             // Miter: widen by 1/cos(half-angle), clamped so hairpins don't spike.
-            w = halfPx / Math.max(1 / 3, mx * a.x + my * a.y);
+            normals.push({ nx: -my, ny: mx, scale: 1 / Math.max(1 / 3, mx * a.x + my * a.y) });
         }
-        left.push(map.unproject(L.point(pts[i].x + nx * w, pts[i].y + ny * w), zoom));
-        right.push(map.unproject(L.point(pts[i].x - nx * w, pts[i].y - ny * w), zoom));
     }
-    return { left, right };
+    return { map, zoom, pts, normals };
 }
 
-const ribbonRing = (off, kStart, kEnd) =>
-    off.left.slice(kStart, kEnd + 1).concat(off.right.slice(kStart, kEnd + 1).reverse());
+// Ribbon ring for samples [kStart..kEnd]; halfAt(k) gives the half-width in
+// px at each sample, so width can vary along the road (altitude flare).
+function ribbonRing(geom, kStart, kEnd, halfAt) {
+    const left = [], right = [];
+    for (let k = kStart; k <= kEnd; k++) {
+        const p = geom.pts[k], { nx, ny, scale } = geom.normals[k];
+        const w = halfAt(k) * scale;
+        left.push(geom.map.unproject(L.point(p.x + nx * w, p.y + ny * w), geom.zoom));
+        right.unshift(geom.map.unproject(L.point(p.x - nx * w, p.y - ny * w), geom.zoom));
+    }
+    return left.concat(right);
+}
 
 // Draw ranked roads (already sorted steepest-first); shallower roads are drawn
 // first so the steepest sit on top. Each road is a group of constant-color
@@ -223,9 +231,9 @@ export function drawRoads(map, ranked, windowM, mode, rankMode = 'sustained') {
         e.skeleton.setStyle({ opacity: on ? 0.55 : 0 });
         const emphasizeClimb = isClimbMode && road.climb;
         for (const { poly, inClimb } of e.chunks) {
-            if (emphasizeClimb && !inClimb) poly.setStyle({ opacity: 0, fillOpacity: on ? 0.45 : 0.9 });
+            if (emphasizeClimb && !inClimb) poly.setStyle({ opacity: 0, fillOpacity: on ? 0.45 : 1 });
             // The outline stroke (same color) fattens the ribbon when shown.
-            else poly.setStyle({ opacity: on ? 1 : 0, fillOpacity: on ? 1 : 0.9 });
+            else poly.setStyle({ opacity: on ? 1 : 0, fillOpacity: 1 });
         }
     }
 
@@ -237,32 +245,51 @@ export function drawRoads(map, ranked, windowM, mode, rankMode = 'sustained') {
         const chunks = [];
         let steepest = null, steepestClimb = null;
         let clickK = null; // set by a map click just before the bound popup opens
-        const off = ribbonOffsets(map, road.samples, LINE_WEIGHT / 2);
+        const geom = roadGeometry(map, road.samples);
         const split = isClimbMode && road.climb ? new Set([road.climb.i, road.climb.j]) : null;
+        // Group contiguous same-hue chunks into runs; each run's width starts
+        // at WIDTH_MIN at its own lowest altitude, so thin -> thick = uphill.
+        const runs = [];
         for (const chunk of colorChunks(road, split)) {
             const inClimb = isClimbMode && road.climb && chunk.kStart >= road.climb.i && chunk.kStart < road.climb.j;
-            const c = (isClimbMode && !inClimb ? colorAlt : color)(chunk.paint);
-            const poly = L.polygon(ribbonRing(off, chunk.kStart, chunk.kEnd), {
-                fillColor: c, fillOpacity: 0.9,
-                // Invisible outline; highlight raises its opacity to fatten the ribbon.
-                stroke: true, color: c, weight: LINE_WEIGHT, opacity: 0,
-            });
-            // Registered before bindPopup so it runs first on click.
-            poly.on('click', e => { clickK = nearestSegIndex(road, e.latlng); });
-            poly.bindPopup(() => {
-                const k = clickK;
-                clickK = null;
-                return popupHtml(road, chunk.value, windowM, k);
-            });
-            poly.addTo(fg);
-            chunks.push({ poly, inClimb, kStart: chunk.kStart, kEnd: chunk.kEnd });
-            if (!steepest || chunk.paint > steepest.chunkPaint) {
-                steepest = poly;
-                steepest.chunkPaint = chunk.paint;
+            const prev = runs[runs.length - 1];
+            if (prev && prev.inClimb === inClimb && prev.kEnd === chunk.kStart) {
+                prev.kEnd = chunk.kEnd;
+                prev.items.push(chunk);
+            } else {
+                runs.push({ inClimb, kStart: chunk.kStart, kEnd: chunk.kEnd, items: [chunk] });
             }
-            if (inClimb && (!steepestClimb || chunk.paint > steepestClimb.chunkPaint)) {
-                steepestClimb = poly;
-                steepestClimb.chunkPaint = chunk.paint;
+        }
+        for (const run of runs) {
+            let base = Infinity;
+            for (let k = run.kStart; k <= run.kEnd; k++) base = Math.min(base, road.elev[k]);
+            const halfAt = k => (WIDTH_MIN + WIDTH_PER_M * (road.elev[k] - base)) / 2;
+            for (const chunk of run.items) {
+                const c = (isClimbMode && !run.inClimb ? colorAlt : color)(chunk.paint);
+                const poly = L.polygon(ribbonRing(geom, chunk.kStart, chunk.kEnd, halfAt), {
+                    // Opaque fill: semi-transparent neighbors blend with the
+                    // basemap at antialiased seam edges and show hairlines.
+                    fillColor: c, fillOpacity: 1,
+                    // Invisible outline; highlight raises its opacity to fatten the ribbon.
+                    stroke: true, color: c, weight: LINE_WEIGHT, opacity: 0,
+                });
+                // Registered before bindPopup so it runs first on click.
+                poly.on('click', e => { clickK = nearestSegIndex(road, e.latlng); });
+                poly.bindPopup(() => {
+                    const k = clickK;
+                    clickK = null;
+                    return popupHtml(road, chunk.value, windowM, k);
+                });
+                poly.addTo(fg);
+                chunks.push({ poly, inClimb: run.inClimb, kStart: chunk.kStart, kEnd: chunk.kEnd, halfAt });
+                if (!steepest || chunk.paint > steepest.chunkPaint) {
+                    steepest = poly;
+                    steepest.chunkPaint = chunk.paint;
+                }
+                if (run.inClimb && (!steepestClimb || chunk.paint > steepestClimb.chunkPaint)) {
+                    steepestClimb = poly;
+                    steepestClimb.chunkPaint = chunk.paint;
+                }
             }
         }
         fg.on('mouseover', () => setHighlight(road, true));
@@ -271,12 +298,12 @@ export function drawRoads(map, ranked, windowM, mode, rankMode = 'sustained') {
         lines.set(road, { skeleton, chunks, steepest, steepestClimb });
     }
 
-    // Constant pixel width means the ribbon geometry is zoom-dependent.
+    // Pixel-based widths mean the ribbon geometry is zoom-dependent.
     const rebuild = () => {
         for (const [road, e] of lines) {
             if (!e.chunks.length) continue;
-            const off = ribbonOffsets(map, road.samples, LINE_WEIGHT / 2);
-            for (const c of e.chunks) c.poly.setLatLngs(ribbonRing(off, c.kStart, c.kEnd));
+            const geom = roadGeometry(map, road.samples);
+            for (const c of e.chunks) c.poly.setLatLngs(ribbonRing(geom, c.kStart, c.kEnd, c.halfAt));
         }
     };
     map.on('zoomend', rebuild);

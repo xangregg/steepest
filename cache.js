@@ -5,7 +5,7 @@
 
 const DB_NAME = 'steepest';
 const STORE = 'searches';
-const VERSION_TAG = 3;                       // bump when the processed-road shape changes
+const VERSION_TAG = 4;                       // bump when the processed-road shape changes
 const TTL_MS = 14 * 24 * 3600 * 1000;        // roads barely change; 2 weeks is safe
 
 function openDb() {

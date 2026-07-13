@@ -19,6 +19,16 @@ const gateRoads = prepareRoads([
     way(4, 'Corner St', [[35.001, -78], [35.001, -77.999]]),
 ]);
 const chains = name => gateRoads.filter(r => r.name === name).length;
+
+// A 2-node tunnel way between two ordinary ways must keep its flag through
+// stitching (the junction points get deduplicated when ways merge).
+const tunnelWay = way(6, 'Bore St', [[35.001, -77], [35.002, -77]]);
+tunnelWay.tags.tunnel = 'yes';
+const bore = prepareRoads([
+    way(5, 'Bore St', [[35, -77], [35.001, -77]]),
+    tunnelWay,
+    way(7, 'Bore St', [[35.002, -77], [35.003, -77]]),
+]);
 import { elevatePoints } from '../elevation.js';
 import { resample, analyzeRoad, segmentSustained, sustainedGrade, hardestClimb, SAMPLE_STEP } from '../metrics.js';
 
@@ -36,6 +46,8 @@ function assert(cond, msg) {
 // Unit-ish checks first
 assert(chains('Straight St') === 1, 'collinear same-name ways stitch into one road');
 assert(chains('Corner St') === 2, 'right-angle same-name ways stay separate');
+assert(bore.length === 1 && resample(bore[0].pts).some(s => s.b),
+    'tunnel flag survives stitching of a 2-node tunnel way');
 assert(parseLatLon('35.23, -82.73')?.lat === 35.23, 'parseLatLon accepts coordinates');
 assert(parseLatLon('Brevard, NC') === null, 'parseLatLon rejects place names');
 const flat = resample([{ lat: 35, lon: -82.7 }, { lat: 35.009, lon: -82.7 }]); // ~1 km due north

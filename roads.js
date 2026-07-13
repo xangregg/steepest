@@ -170,11 +170,18 @@ function stitchGroup(ways) {
             if (!straightThrough(wa, a.atStart, wb, b.atStart, joinPt)) continue;
             const head = a.atStart ? [...wa.pts].reverse() : wa.pts;
             const tail = b.atStart ? wb.pts : [...wb.pts].reverse();
+            const pts = [...head, ...tail.slice(1)];
+            // The dropped duplicate (tail[0]) may carry a bridge/tunnel flag the
+            // kept junction point lacks — without it, a 2-node tunnel way loses
+            // its only segment's flag and its deck elevation never interpolates.
+            if (tail[0].b && !pts[head.length - 1].b) {
+                pts[head.length - 1] = { ...pts[head.length - 1], b: true };
+            }
             const joined = {
                 ...wa,
                 base: wa.base ?? wb.base,
                 nameType: wa.nameType ?? wb.nameType,
-                pts: [...head, ...tail.slice(1)],
+                pts,
             };
             ways = ways.filter((_, i) => i !== a.i && i !== b.i);
             ways.push(joined);
