@@ -21,16 +21,19 @@
     import { resample, analyzeRoad, segmentSustained, hardestClimb } from '../metrics.js';
     import { initMap, drawRoads, renderList } from '../render.js';
 
-    // Straight north-south roads near Brevard, ~1 km each, with hand-built
-    // elevation profiles.
-    const mkRoad = (name, lonOffset, elevFn) => {
-        const samples = resample([{ lat: 35.23, lon: -82.74 + lonOffset }, { lat: 35.239, lon: -82.74 + lonOffset }]);
+    // Synthetic roads near Brevard, ~1 km each, with hand-built elevation
+    // profiles. Most are straight north-south lines; mkRoadPts allows curved
+    // geometry for testing ribbon joins at bends.
+    const mkRoadPts = (name, pts, elevFn) => {
+        const samples = resample(pts);
         const road = { id: name, name, samples, ...analyzeRoad(samples, samples.map(s => elevFn(s.d))) };
         road.segs = segmentSustained(samples, road.elev, 100);
         road.value = road.segs.reduce((m, v) => Math.max(m, v), 0);
         road.climb = hardestClimb(samples, road.elev);
         return road;
     };
+    const mkRoad = (name, lonOffset, elevFn) =>
+        mkRoadPts(name, [{ lat: 35.23, lon: -82.74 + lonOffset }, { lat: 35.239, lon: -82.74 + lonOffset }], elevFn);
     const roads = [
         mkRoad('Flat then 20%', 0, d => (d < 500 ? 0 : (d - 500) * 0.20)),
         mkRoad('Rollercoaster', 0.004, d => 40 * Math.sin(d / 120)),
@@ -41,6 +44,12 @@
         // Up 10%, 75 m crest flat, down 8%, flat tail: the short crest gap
         // should close with the palest paint; the tail stays bare.
         mkRoad('Crest', 0.016, d => d < 300 ? d * 0.1 : d < 375 ? 30 : d < 675 ? 30 - (d - 375) * 0.08 : 6),
+        // Curved geometry with rolling elevation: color transitions land on
+        // bends, exercising the mitered ribbon joins.
+        mkRoadPts('Serpentine', Array.from({ length: 40 }, (_, i) => {
+            const t = i / 39;
+            return { lat: 35.23 + t * 0.009, lon: -82.7175 + 0.0012 * Math.sin(t * Math.PI * 5) };
+        }), d => 40 * Math.sin(d / 90)),
     ].sort((a, b) => b.value - a.value);
     for (const r of roads) {
         if (!r.climb) continue;
@@ -52,7 +61,10 @@
     const { map, updateLegend } = initMap(document.getElementById('map'), 'light');
     updateLegend('light', 'climb');
     const layer = drawRoads(map, roads, 100, 'light', 'climb');
-    map.fitBounds([[35.229, -82.742], [35.240, -82.722]]);
+    map.fitBounds([[35.229, -82.742], [35.240, -82.714]]);
+    // Optional close-up for seam inspection: #z=17&lat=35.2335&lon=-82.736
+    const p = new URLSearchParams(location.hash.slice(1));
+    if (p.get('z')) map.setView([+p.get('lat'), +p.get('lon')], +p.get('z'));
     // Pre-highlight one road so a screenshot shows the hover state: the climb
     // (upper wall) thickens, the rest dims, and the gray full-road skeleton
     // appears across the unpainted flat half.

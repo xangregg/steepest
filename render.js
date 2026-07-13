@@ -154,17 +154,55 @@ function colorChunks(road, splitAt) {
         if (paint[k] < GRADE_MIN) { cur = null; continue; }
         const b = bin(paint[k]);
         if (!cur || b !== cur.bin || splitAt?.has(k)) {
-            cur = { bin: b, paint: paint[k], value: segs[k], kStart: k, kEnd: k + 1, latlngs: [[samples[k].lat, samples[k].lon]] };
+            cur = { bin: b, paint: paint[k], value: segs[k], kStart: k, kEnd: k + 1 };
             chunks.push(cur);
         } else {
             cur.paint = Math.max(cur.paint, paint[k]);
             cur.value = Math.max(cur.value, segs[k]);
             cur.kEnd = k + 1;
         }
-        cur.latlngs.push([samples[k + 1].lat, samples[k + 1].lon]);
     }
     return chunks;
 }
+
+const LINE_WEIGHT = 3.5; // ribbon width in px
+
+// Per-sample left/right ribbon edge points for a whole road at the current
+// zoom, offset along angle-bisector (miter) normals in projected pixel space.
+// Chunks slice these shared vertices, so adjacent chunks meet edge-to-edge
+// with no cap overlap and no wedge gaps, whatever the join angle.
+function ribbonOffsets(map, samples, halfPx) {
+    const zoom = map.getZoom();
+    const pts = samples.map(s => map.project([s.lat, s.lon], zoom));
+    const n = pts.length;
+    const dirs = [];
+    for (let i = 0; i < n - 1; i++) {
+        const dx = pts[i + 1].x - pts[i].x, dy = pts[i + 1].y - pts[i].y;
+        const len = Math.hypot(dx, dy) || 1;
+        dirs.push({ x: dx / len, y: dy / len });
+    }
+    const left = [], right = [];
+    for (let i = 0; i < n; i++) {
+        const a = dirs[Math.max(0, i - 1)], b = dirs[Math.min(n - 2, i)];
+        let mx = a.x + b.x, my = a.y + b.y;
+        const mlen = Math.hypot(mx, my);
+        let nx, ny, w;
+        if (mlen < 1e-9) { // 180° hairpin: fall back to the previous normal
+            nx = -a.y; ny = a.x; w = halfPx;
+        } else {
+            mx /= mlen; my /= mlen;
+            nx = -my; ny = mx;
+            // Miter: widen by 1/cos(half-angle), clamped so hairpins don't spike.
+            w = halfPx / Math.max(1 / 3, mx * a.x + my * a.y);
+        }
+        left.push(map.unproject(L.point(pts[i].x + nx * w, pts[i].y + ny * w), zoom));
+        right.push(map.unproject(L.point(pts[i].x - nx * w, pts[i].y - ny * w), zoom));
+    }
+    return { left, right };
+}
+
+const ribbonRing = (off, kStart, kEnd) =>
+    off.left.slice(kStart, kEnd + 1).concat(off.right.slice(kStart, kEnd + 1).reverse());
 
 // Draw ranked roads (already sorted steepest-first); shallower roads are drawn
 // first so the steepest sit on top. Each road is a group of constant-color
@@ -184,9 +222,10 @@ export function drawRoads(map, ranked, windowM, mode, rankMode = 'sustained') {
         if (!e) return;
         e.skeleton.setStyle({ opacity: on ? 0.55 : 0 });
         const emphasizeClimb = isClimbMode && road.climb;
-        for (const { line, inClimb } of e.chunks) {
-            if (emphasizeClimb && !inClimb) line.setStyle({ weight: 3.5, opacity: on ? 0.45 : 0.9 });
-            else line.setStyle({ weight: on ? 7 : 3.5, opacity: on ? 1 : 0.9 });
+        for (const { poly, inClimb } of e.chunks) {
+            if (emphasizeClimb && !inClimb) poly.setStyle({ opacity: 0, fillOpacity: on ? 0.45 : 0.9 });
+            // The outline stroke (same color) fattens the ribbon when shown.
+            else poly.setStyle({ opacity: on ? 1 : 0, fillOpacity: on ? 1 : 0.9 });
         }
     }
 
@@ -198,29 +237,31 @@ export function drawRoads(map, ranked, windowM, mode, rankMode = 'sustained') {
         const chunks = [];
         let steepest = null, steepestClimb = null;
         let clickK = null; // set by a map click just before the bound popup opens
+        const off = ribbonOffsets(map, road.samples, LINE_WEIGHT / 2);
         const split = isClimbMode && road.climb ? new Set([road.climb.i, road.climb.j]) : null;
         for (const chunk of colorChunks(road, split)) {
             const inClimb = isClimbMode && road.climb && chunk.kStart >= road.climb.i && chunk.kStart < road.climb.j;
-            const line = L.polyline(chunk.latlngs, {
-                color: (isClimbMode && !inClimb ? colorAlt : color)(chunk.paint),
-                weight: 3.5,
-                opacity: 0.9,
+            const c = (isClimbMode && !inClimb ? colorAlt : color)(chunk.paint);
+            const poly = L.polygon(ribbonRing(off, chunk.kStart, chunk.kEnd), {
+                fillColor: c, fillOpacity: 0.9,
+                // Invisible outline; highlight raises its opacity to fatten the ribbon.
+                stroke: true, color: c, weight: LINE_WEIGHT, opacity: 0,
             });
             // Registered before bindPopup so it runs first on click.
-            line.on('click', e => { clickK = nearestSegIndex(road, e.latlng); });
-            line.bindPopup(() => {
+            poly.on('click', e => { clickK = nearestSegIndex(road, e.latlng); });
+            poly.bindPopup(() => {
                 const k = clickK;
                 clickK = null;
                 return popupHtml(road, chunk.value, windowM, k);
             });
-            line.addTo(fg);
-            chunks.push({ line, inClimb });
+            poly.addTo(fg);
+            chunks.push({ poly, inClimb, kStart: chunk.kStart, kEnd: chunk.kEnd });
             if (!steepest || chunk.paint > steepest.chunkPaint) {
-                steepest = line;
+                steepest = poly;
                 steepest.chunkPaint = chunk.paint;
             }
             if (inClimb && (!steepestClimb || chunk.paint > steepestClimb.chunkPaint)) {
-                steepestClimb = line;
+                steepestClimb = poly;
                 steepestClimb.chunkPaint = chunk.paint;
             }
         }
@@ -229,6 +270,17 @@ export function drawRoads(map, ranked, windowM, mode, rankMode = 'sustained') {
         fg.addTo(group);
         lines.set(road, { skeleton, chunks, steepest, steepestClimb });
     }
+
+    // Constant pixel width means the ribbon geometry is zoom-dependent.
+    const rebuild = () => {
+        for (const [road, e] of lines) {
+            if (!e.chunks.length) continue;
+            const off = ribbonOffsets(map, road.samples, LINE_WEIGHT / 2);
+            for (const c of e.chunks) c.poly.setLatLngs(ribbonRing(off, c.kStart, c.kEnd));
+        }
+    };
+    map.on('zoomend', rebuild);
+
     return {
         group,
         highlight: setHighlight,
@@ -242,7 +294,10 @@ export function drawRoads(map, ranked, windowM, mode, rankMode = 'sustained') {
             map.fitBounds(L.latLngBounds(pts.map(s => [s.lat, s.lon])).pad(0.3));
             (e.steepestClimb ?? e.steepest)?.openPopup();
         },
-        remove() { map.removeLayer(group); },
+        remove() {
+            map.off('zoomend', rebuild);
+            map.removeLayer(group);
+        },
     };
 }
 
