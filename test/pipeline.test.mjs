@@ -141,10 +141,23 @@ assert(grind && grind.reduce((s, v) => s + v, 0) >= flat.length - 3, 'steady 2.5
 assert(grindMask(flat, mkElev(d => d * 0.01), 1000) === null, '1% km is not a grind');
 assert(grindMask(flat, mkElev(d => d * 0.025 + 8 * Math.sin(d / 50)), 1000) === null,
     'rolling profile with real dips is not a grind');
-// A dead-flat tail must not inherit the grind mark from an attached hill.
-const flatWall = grindMask(flat, mkElev(d => Math.max(0, d - 500) * 0.1), 1000);
-assert(flatWall && !flatWall[2] && !flatWall[10],
-    'flat half of flat-then-wall carries no grind mark');
+// Flat-then-wall: the qualifying 1 km interval is half flat and half a 500 m
+// wall — the coherent incline itself is shorter than the threshold, so no
+// long-incline mark survives at all (the wall gets steepness paint anyway).
+assert(grindMask(flat, mkElev(d => Math.max(0, d - 500) * 0.1), 1000) === null,
+    'flat-then-wall leaves no long-incline mark (incline itself too short)');
+// Two inclines meeting at a valley bottom must split into two runs, not merge
+// into one incoherent ~0 % run (the Bolin Creek case).
+const vRoad = resample([{ lat: 35, lon: -82.4 }, { lat: 35.027, lon: -82.4 }]); // ~3 km
+const vMask = grindMask(vRoad, analyzeRoad(vRoad, vRoad.map(s => Math.abs(s.d - 1500) * 0.03)).elev, 1000);
+const midSeg = Math.floor(vMask.length / 2);
+assert(vMask && vMask[5] && vMask[vMask.length - 6], 'V profile keeps both incline sides');
+const gap = [];
+for (let k = 0; k < vMask.length; k++)
+    if (!vMask[k])
+        gap.push(k);
+assert(gap.length >= 1 && gap.every(k => Math.abs(k - midSeg) < 4),
+    `V splits at the valley bottom (unmasked segs: ${gap.join(',')})`);
 
 // Bridge interpolation: a 5% road crossing a 40 m-deep gorge on a bridge
 // (middle third flagged b) must read ~5%, not a cliff.

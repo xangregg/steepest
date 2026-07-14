@@ -60,7 +60,7 @@ header h1 {
     padding: 5px 8px;
 }
 #controls input:focus, #controls select:focus { outline: 2px solid var(--accent); outline-offset: 0; }
-#radius, #minlen, #listmax { width: 4.5em; }
+#radius, #longlen, #listmax { width: 4.5em; }
 #go {
     font: inherit;
     font-weight: 600;

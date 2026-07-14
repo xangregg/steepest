@@ -44,7 +44,7 @@ function status(msg, { error = false, progress } = {}) {
 }
 
 async function run(refresh = false) {
-    abort?.abort();
+    abort?.abort(); // cancel any still-running previous search before starting a new one
     const ctl = new AbortController();
     abort = ctl;
     byId('go').disabled = true;
@@ -53,7 +53,7 @@ async function run(refresh = false) {
         const radiusM = Math.min(15, Math.max(1, +byId('radius').value || 6)) * 1000;
 
         status('Locating…');
-        const center = parseLatLon(query) ?? await geocode(query, ctl.signal);
+        const center = parseLatLon(query) ?? await geocode(query, ctl.signal);  // localStorage cached
 
         const key = searchKey(center, radiusM);
         if (!refresh) {
@@ -61,7 +61,7 @@ async function run(refresh = false) {
             if (hit) {
                 state = { roads: hit.roads, center, radiusM, label: center.label, cachedAt: hit.t };
                 map.fitBounds(L.latLng(center.lat, center.lon).toBounds(radiusM * 2));
-                updateHash(query);
+                updateHash(query);  // the # part of the URL
                 render();
                 return;
             }
@@ -137,7 +137,7 @@ function render() {
     if (!state)
         return;
     const windowM = Math.max(SAMPLE_STEP, +byId('window').value || 250);
-    const minLen = Math.max(0, +byId('minlen').value || 0);
+    const longLen = Math.max(SAMPLE_STEP * 2, +byId('longlen').value || 800);
     const listMax = Math.min(100, Math.max(1, +byId('listmax').value || 25));
     const rankMode = byId('rankmode').value;
     let ranked = state.roads
@@ -148,7 +148,7 @@ function render() {
             r.topClimb = false;
             return r;
         })
-        .filter(r => r.value != null && r.length >= minLen);
+        .filter(r => r.value != null); // shorter-than-window roads have no value
     if (rankMode === 'climb') {
         // Climbs don't depend on the window; memoized until the next search.
         for (const r of ranked)
@@ -168,13 +168,12 @@ function render() {
         ranked.sort((a, b) => b.value - a.value);
     }
 
-    // Grind acknowledgment: long (4× min length), mostly monotonic, >= 2%
-    // stretches get a categorical color where the steepness ramps are silent.
-    const grindSpan = Math.max(minLen, SAMPLE_STEP) * 4;
+    // Long-incline acknowledgment: mostly monotonic, >= 2% stretches at least
+    // longLen long get the amber underlay where the steepness colors are silent.
     for (const r of ranked) {
-        if (r.grindSpan !== grindSpan) {
-            r.grind = grindMask(r.samples, r.elev, grindSpan);
-            r.grindSpan = grindSpan;
+        if (r.grindSpan !== longLen) {
+            r.grind = grindMask(r.samples, r.elev, longLen);
+            r.grindSpan = longLen;
         }
     }
 
@@ -209,7 +208,7 @@ function render() {
     byId('list-title').textContent = rankMode === 'climb'
         ? 'Hardest climbs — gain × grade'
         : `Steepest roads — sustained ${windowM} m`;
-    byId('list-sub').textContent = `${state.label} · ${ranked.length.toLocaleString()} roads ≥ ${Math.max(minLen, windowM)} m`;
+    byId('list-sub').textContent = `${state.label} · ${ranked.length.toLocaleString()} roads ≥ ${windowM} m`;
 
     const doneMsg = `${ranked.length.toLocaleString()} roads ranked within ${(state.radiusM / 1000).toFixed(1)} km.`;
     if (state.cachedAt) {
@@ -241,7 +240,7 @@ function updateHash(query) {
         q: query,
         r: String(+byId('radius').value),
         w: String(+byId('window').value),
-        min: String(+byId('minlen').value),
+        long: String(+byId('longlen').value),
         n: String(+byId('listmax').value),
         mode: byId('rankmode').value,
     });
@@ -258,7 +257,7 @@ const onControlChange = () => {
         updateHash(byId('place').value.trim());
 };
 byId('window').addEventListener('change', onControlChange);
-byId('minlen').addEventListener('change', onControlChange);
+byId('longlen').addEventListener('change', onControlChange);
 byId('listmax').addEventListener('change', onControlChange);
 byId('rankmode').addEventListener('change', onControlChange);
 darkQuery.addEventListener('change', () => {
@@ -284,8 +283,8 @@ if (params.get('q')) {
         byId('radius').value = params.get('r');
     if (params.get('w'))
         byId('window').value = params.get('w');
-    if (params.get('min'))
-        byId('minlen').value = params.get('min');
+    if (params.get('long'))
+        byId('longlen').value = params.get('long');
     if (params.get('n'))
         byId('listmax').value = params.get('n');
     if (['sustained', 'climb'].includes(params.get('mode')))

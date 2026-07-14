@@ -15,7 +15,7 @@
 // The exported ramps/constants double as the live-experiment surface (see the
 // window.steepest hook in app.js).
 
-import { haversine, SAMPLE_STEP } from './metrics.js';
+import { haversine, SAMPLE_STEP, GRIND_MIN_GRADE } from './metrics.js';
 
 export const GRADE_MIN = 0.05; // below this a segment gets no highlight at all
 export const GRADE_MAX = 0.25; // ramp saturates at a 25% grade
@@ -95,7 +95,7 @@ export function initMap(el, mode) {
     const updateLegend = (m, rankMode = 'sustained', topN = 25) => {
         // Below the ticks and swatch-sized, so the % scale clearly doesn't
         // apply to the categorical grind color.
-        const grindRow = `<div class="legend-row legend-grind"><div class="legend-swatch" style="background:${GRIND_COLORS[m]};opacity:${GRIND_OPACITY}"></div><span class="legend-label">long incline (≥2%)</span></div>`;
+        const grindRow = `<div class="legend-row legend-grind"><div class="legend-swatch" style="background:${GRIND_COLORS[m]};opacity:${GRIND_OPACITY}"></div><span class="legend-label">long incline (≥${+(GRIND_MIN_GRADE * 100).toFixed(2)}%)</span></div>`;
         legendDiv.innerHTML = rankMode === 'climb'
             ? `<div class="legend-title">grade</div>
                <div class="legend-row">${barDiv(rampBg(RAMPS[m]))}<span class="legend-label">top ${topN} climbs</span></div>
@@ -127,8 +127,19 @@ function popupHtml(road, stretchValue, windowM, segK) {
         const g = Math.abs(e1 - e0) / (s1.d - s0.d);
         localRows = `
         <div class="popup-row popup-active"><span>This ${(s1.d - s0.d).toFixed(1)} m segment</span><b>${fmtPct(g)} · ${e0.toFixed(1)}→${e1.toFixed(1)} m</b></div>
-        <div class="popup-row"><span>Sustained ${windowM} m here</span><b>${fmtPct(road.segs[segK])}</b></div>
-        <div class="popup-row"><span>Along road</span><b>${fmtLen(s0.d)} of ${fmtLen(road.length)}</b></div>`;
+        <div class="popup-row"><span>Sustained ${windowM} m here</span><b>${fmtPct(road.segs[segK])}</b></div>`;
+        // When the click lands on a long incline, describe its whole run.
+        if (road.grind?.[segK]) {
+            let a = segK, b = segK;
+            while (a > 0 && road.grind[a - 1])
+                a--;
+            while (b < road.grind.length - 1 && road.grind[b + 1])
+                b++;
+            const span = road.samples[b + 1].d - road.samples[a].d;
+            const gain = Math.abs(road.elev[b + 1] - road.elev[a]);
+            localRows += `
+        <div class="popup-row"><span>Long incline</span><b>↑${Math.round(gain)} m @ ${fmtPct(gain / span)} over ${fmtLen(span)}</b></div>`;
+        }
     }
     else {
         localRows = `
@@ -402,15 +413,23 @@ export function drawRoads(map, ranked, windowM, mode, rankMode = 'sustained') {
                     const c = GRIND_COLORS[mode];
                     const widthAt = runWidthAt(kStart, kEnd);
                     const iStart = dp.sampleIdx[kStart], iEnd = dp.sampleIdx[kEnd];
-                    const poly = L.polygon(ribbonRing(geom, dp.verts, iStart, iEnd, widthAt), {
+                    const ring = ribbonRing(geom, dp.verts, iStart, iEnd, widthAt);
+                    const poly = L.polygon(ring, {
                         pane: 'inclines', renderer: map._inclineRenderer,
+                        interactive: false,
                         // Opaque within the pane; the pane itself is faded.
                         fillColor: c, fillOpacity: 1,
                         stroke: true, color: c, weight: LINE_WEIGHT, opacity: 0,
                     });
-                    wirePopup(poly, best);
+                    // Canvases don't forward pointer events between panes, so
+                    // the visual ribbon can't receive clicks itself: an
+                    // invisible twin on the main canvas is the hit target
+                    // (added before the steep chunks, which win overlaps).
+                    const hit = L.polygon(ring, { fill: true, fillOpacity: 0, stroke: false });
+                    wirePopup(hit, best);
                     poly.addTo(fg);
-                    chunks.push({ poly, inClimb: false, isGrind: true, iStart, iEnd, widthAt });
+                    hit.addTo(fg);
+                    chunks.push({ poly, hit, inClimb: false, isGrind: true, iStart, iEnd, widthAt });
                     a = -1;
                 }
             }
@@ -470,8 +489,11 @@ export function drawRoads(map, ranked, windowM, mode, rankMode = 'sustained') {
             if (!e.chunks.length)
                 continue;
             const geom = roadGeometry(map, e.dp.verts);
-            for (const c of e.chunks)
-                c.poly.setLatLngs(ribbonRing(geom, e.dp.verts, c.iStart, c.iEnd, c.widthAt));
+            for (const c of e.chunks) {
+                const ring = ribbonRing(geom, e.dp.verts, c.iStart, c.iEnd, c.widthAt);
+                c.poly.setLatLngs(ring);
+                c.hit?.setLatLngs(ring);
+            }
         }
     };
     map.on('zoomend', rebuild);

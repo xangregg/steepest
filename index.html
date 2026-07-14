@@ -30,8 +30,9 @@
             <input id="window" type="number" min="25" max="2000" step="25" value="250"
                    title="Steepness = best average grade held over any stretch of this length. 25 m ≈ steepest single segment; larger values reward long climbs."> m
         </label>
-        <label>Min length
-            <input id="minlen" type="number" min="50" max="5000" step="50" value="250"> m
+        <label>Long incline
+            <input id="longlen" type="number" min="200" max="5000" step="50" value="800"
+                   title="Mostly monotonic stretches at least this long, averaging ≥2.25%, get the amber long-incline underlay."> m
         </label>
         <label>List top
             <input id="listmax" type="number" min="5" max="100" step="5" value="25"

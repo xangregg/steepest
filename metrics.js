@@ -156,7 +156,7 @@ export function sustainedGrade(samples, elev, windowM) {
 
 const DIP_ABS = 2;       // m of counter-slope always forgiven (DEM noise)
 const DIP_FRAC = 0.10;   // ... or up to this fraction of the total ascent
-export const GRIND_MIN_GRADE = 0.02; // a long incline counts from this average grade
+export const GRIND_MIN_GRADE = 0.0225; // a long incline counts from this average grade
 
 // Cumulative ascent/descent prefixes, for testing whether an interval is
 // "mostly monotonic" as traveled (shared by climbs and long inclines).
@@ -214,10 +214,63 @@ export function grindMask(samples, elev, minSpan) {
         if (cover > 0)
             mask[k] = 1;
     }
-    // Interval membership alone would mark a dead-flat tail whose interval
-    // qualifies via an attached hill. Trim each run's ends back to where the
-    // ground actually inclines; interior breathers stay covered.
+    // Interval membership alone would (a) mark a dead-flat tail whose interval
+    // qualifies via an attached hill, and (b) merge opposite-direction inclines
+    // that meet at a valley or summit into one incoherent run (a V at a creek
+    // would report ~0 %). Refine each contiguous run: trim ends back to where
+    // the ground actually inclines, drop leftovers shorter than the span, and
+    // split runs that aren't a single mostly-monotonic incline at their
+    // deepest reversal, recursing on the halves.
     const localOk = k => Math.abs(elev[k + 1] - elev[k]) / (samples[k + 1].d - samples[k].d) >= GRIND_MIN_GRADE / 2;
+    const clear = (a, b) => {
+        for (let k = a; k <= b; k++)
+            mask[k] = 0;
+    };
+    const refine = (a, b) => {
+        while (a <= b && !localOk(a))
+            mask[a++] = 0;
+        while (b >= a && !localOk(b))
+            mask[b--] = 0;
+        if (a > b)
+            return;
+        const span = samples[b + 1].d - samples[a].d;
+        if (span < bound) {
+            clear(a, b);
+            return;
+        }
+        const net = elev[b + 1] - elev[a];
+        const gain = Math.abs(net);
+        const counter = net > 0 ? down[b + 1] - down[a] : up[b + 1] - up[a];
+        if (gain / span >= GRIND_MIN_GRADE && !dipTooBig(gain, counter))
+            return; // a single coherent incline
+        // Deepest reversal: bottom of the largest drawdown or top of the
+        // largest run-up, whichever is bigger (interior samples only).
+        let maxE = elev[a], minE = elev[a];
+        let bestDrop = 0, dropK = -1, bestRise = 0, riseK = -1;
+        for (let k = a + 1; k <= b + 1; k++) {
+            const e = elev[k];
+            maxE = Math.max(maxE, e);
+            minE = Math.min(minE, e);
+            if (k <= b) {
+                if (maxE - e > bestDrop) {
+                    bestDrop = maxE - e;
+                    dropK = k;
+                }
+                if (e - minE > bestRise) {
+                    bestRise = e - minE;
+                    riseK = k;
+                }
+            }
+        }
+        const m = bestDrop >= bestRise ? dropK : riseK;
+        if (m < 0) {
+            clear(a, b);
+            return;
+        }
+        mask[m - 1] = 0;
+        refine(a, m - 2);
+        refine(m, b);
+    };
     let a = -1;
     for (let k = 0; k <= n - 1; k++) {
         const on = k < n - 1 && mask[k];
@@ -225,11 +278,7 @@ export function grindMask(samples, elev, minSpan) {
             a = k;
         }
         else if (!on && a >= 0) {
-            let b = k - 1;
-            while (a <= b && !localOk(a))
-                mask[a++] = 0;
-            while (b >= a && !localOk(b))
-                mask[b--] = 0;
+            refine(a, k - 1);
             a = -1;
         }
     }
