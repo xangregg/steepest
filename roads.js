@@ -9,6 +9,12 @@ const OVERPASS_ENDPOINTS = [
     'https://overpass.kumi.systems/api/interpreter',
 ];
 
+// Nominatim's usage policy requires an identifying User-Agent (contact URL
+// included so an operator can reach us); Overpass wants one too. Only sent from
+// Node — browsers set their own UA and forbid overriding it via fetch. Update
+// the URL if the repo slug changes.
+const USER_AGENT = 'steepest-roads/1.0 (+https://github.com/xangregg/steepest)';
+
 // Road classes worth ranking. Excludes service (driveways, parking aisles),
 // tracks, and paths.
 const HIGHWAY_RE = 'residential|unclassified|living_street|tertiary|secondary|primary|trunk';
@@ -39,10 +45,9 @@ export async function geocode(query, signal) {
     catch { /* cache miss */ }
 
     const url = `${NOMINATIM}?format=json&limit=1&q=${encodeURIComponent(query)}`;
-    // Nominatim's usage policy wants an identifying UA; browsers set their own.
     const opts = { signal };
     if (typeof window === 'undefined')
-        opts.headers = { 'User-Agent': 'steepest-roads/1.0 (dev test)' };
+        opts.headers = { 'User-Agent': USER_AGENT };
     const res = await fetch(url, opts);
     if (!res.ok)
         throw new Error(`Geocoding failed (HTTP ${res.status})`);
@@ -75,7 +80,7 @@ out geom;`;
             try {
                 const headers = { 'Content-Type': 'application/x-www-form-urlencoded' };
                 if (typeof window === 'undefined')
-                    headers['User-Agent'] = 'steepest-roads/1.0 (dev test)';
+                    headers['User-Agent'] = USER_AGENT;
                 const res = await fetch(endpoint, { method: 'POST', headers, body: 'data=' + encodeURIComponent(q), signal });
                 if (!res.ok)
                     throw new Error(`Overpass HTTP ${res.status}`);
