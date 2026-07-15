@@ -8,6 +8,8 @@ a ranked bar list of the steepest ones.
 Everything runs in the browser against free public APIs; there is no backend and
 no database, so it hosts happily on GitHub Pages.
 
+Code and docs were largely written using Claude Code (Fable 5 and Opus 4.8).
+
 ## How it works
 
 1. **Geocoding** — [Nominatim](https://nominatim.org/release-docs/latest/api/Search/)
