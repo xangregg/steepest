@@ -42,7 +42,7 @@ const bore = prepareRoads([
     way(7, 'Bore St', [[35.002, -77], [35.003, -77]]),
 ]);
 import { elevatePoints } from '../elevation.js';
-import { resample, analyzeRoad, segmentSustained, sustainedGrade, hardestClimb, grindMask, SAMPLE_STEP } from '../metrics.js';
+import { resample, analyzeRoad, segmentSustained, sustainedGrade, hardestClimb, hardestClimbs, grindMask, SAMPLE_STEP } from '../metrics.js';
 
 const decodeTile = async url => {
     const res = await fetch(url);
@@ -133,6 +133,18 @@ assert(shoulder.score > 4.35 && shoulder.score < 5.2,
 const steady = hardestClimb(flat, mkElev(d => Math.min(d, 500) * 0.10));
 assert(Math.abs(steady.score - steady.gain ** 2 / steady.span) < 0.15,
     `steady climb: integral ≈ gain²/span (${steady.score.toFixed(2)} vs ${(steady.gain ** 2 / steady.span).toFixed(2)})`);
+
+// Multiple climbs: two hills separated by a real dip are extracted as two
+// non-overlapping climbs, best first (plus the dip itself as a lesser climb
+// in the other direction).
+const twoHills = mkElev(d => d < 400 ? d * 0.1 : d < 550 ? 40 - (d - 400) * 0.1 : d < 850 ? 25 + (d - 550) * 0.1 : 55);
+const multi = hardestClimbs(flat, twoHills, 3);
+assert(multi.length >= 2, `two-hill road yields ${multi.length} climbs`);
+assert(multi[0].gain > 33 && multi[1].gain > 22,
+    `both hills found (↑${multi[0].gain.toFixed(0)} m, ↑${multi[1].gain.toFixed(0)} m)`);
+assert(multi[0].score >= multi[1].score, 'climbs come best first');
+assert(multi.every((a, x) => multi.every((b, y) => x === y || a.j <= b.i || b.j <= a.i)),
+    'climb extents do not overlap');
 
 // Grind mask: a 2.5% monotonic km qualifies (span threshold 1000 m), a 1% km
 // doesn't, and a rolling profile with real dips doesn't.

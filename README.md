@@ -38,7 +38,11 @@ no database, so it hosts happily on GitHub Pages.
      small counter-slope (≤ max(2 m, 10 % of ascent)), so a genuine dip ends
      one climb and starts another; near-flat tails (< 5 %) aren't part of the
      climb, while adjacent ≥ 5 % climbing is included even when it's gentler
-     than the core.
+     than the core. Up to three non-overlapping climbs are extracted per road
+     and all compete individually in the ranking, so a road with two distinct
+     hills can take two list spots (same-name entries are deduped
+     geographically, so parallel carriageways still yield one row per
+     physical climb).
    - **Steepest sustained**: the best average grade a road holds over any
      stretch of the chosen length (default 250 m). The length is a numeric
      input: 25 m degenerates to "steepest single segment" (noisy — treat with

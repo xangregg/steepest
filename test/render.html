@@ -18,7 +18,7 @@
 </main>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script type="module">
-    import { resample, analyzeRoad, segmentSustained, hardestClimb, grindMask } from '../metrics.js';
+    import { resample, analyzeRoad, segmentSustained, hardestClimbs, grindMask } from '../metrics.js';
     import { initMap, drawRoads, renderList } from '../render.js';
 
     // Synthetic roads near Brevard, ~1 km each, with hand-built elevation
@@ -29,11 +29,13 @@
         const road = { id: name, name, pts, samples, ...analyzeRoad(samples, samples.map(s => elevFn(s.d))) };
         road.segs = segmentSustained(samples, road.elev, 100);
         road.value = road.segs.reduce((m, v) => Math.max(m, v), 0);
-        road.climb = hardestClimb(samples, road.elev);
+        road.climbs = hardestClimbs(samples, road.elev, 3);
         road.grind = grindMask(samples, road.elev, 1000);
-        // All fixture roads count as top-listed except the Crosser, which
+        // All fixture climbs count as top-listed except the Crosser's, which
         // simulates a road outside the top-N: its climb must render violet.
-        road.topClimb = !!road.climb && name !== 'Crosser 6%';
+        road.topExtents = name === 'Crosser 6%'
+            ? null
+            : road.climbs.map(c => [c.i, c.j]);
         return road;
     };
     const mkRoad = (name, lonOffset, elevFn) =>
@@ -75,11 +77,12 @@
         }), d => d * 0.05),
     ].sort((a, b) => b.value - a.value);
     for (const r of roads) {
-        if (!r.climb)
+        if (!r.climbs.length)
             continue;
         const paint = Float64Array.from(r.segs);
-        for (let k = r.climb.i; k < r.climb.j; k++)
-            paint[k] = Math.max(paint[k], r.climb.grade);
+        for (const c of r.climbs)
+            for (let k = c.i; k < c.j; k++)
+                paint[k] = Math.max(paint[k], c.grade);
         r.paint = paint;
     }
 
@@ -107,15 +110,17 @@
         clicked = true;
     };
     layer.group.eachLayer(fg => fg.eachLayer(tryClick));
-    renderList(document.getElementById('road-list'), roads, 'light', {
-        onHover: (r, on) => layer.highlight(r, on),
-        onClick: r => layer.focus(r),
+    renderList(document.getElementById('road-list'), roads.map(r => ({ road: r, climb: null })), 'light', {
+        onHover: (e, on) => layer.highlight(e.road, on),
+        onClick: e => layer.focus(e.road, e.climb),
     });
-    const byClimb = roads.filter(r => r.climb).sort((a, b) => b.climb.score - a.climb.score);
+    // Every climb competes individually, so multi-hill roads take several rows.
+    const byClimb = roads.flatMap(r => r.climbs.map(c => ({ road: r, climb: c })))
+        .sort((a, b) => b.climb.score - a.climb.score);
     renderList(document.getElementById('climb-list'), byClimb, 'light', {
         rankMode: 'climb',
-        onHover: (r, on) => layer.highlight(r, on),
-        onClick: r => layer.focus(r),
+        onHover: (e, on) => layer.highlight(e.road, on),
+        onClick: e => layer.focus(e.road, e.climb),
     });
 </script>
 </body>

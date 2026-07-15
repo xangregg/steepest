@@ -10,14 +10,16 @@
 // and per render (cheap, recomputed on control changes):
 //   segs      per-segment sustained-window grade (Float64Array)
 //   value     max of segs — the sustained-mode ranking value
-//   climb     hardest climb {score, gain, span, grade, i, j, dir} (memoized)
+//   climbs    up to 3 non-overlapping hardest climbs, best first (memoized);
+//             each is {score, gain, span, grade, i, j, dir}
 //   grind     long-incline mask over segments (memoized per span)
-//   paint     color values; climb mode floors the climb extent for continuity
-//   topClimb  road is in the ranked list, so its climb wears red
+//   paint     color values; climb mode floors climb extents for continuity
+//   topExtents  [i, j] extents of this road's climbs that made the ranked
+//               list — those wear red on the map
 
 import { parseLatLon, geocode, fetchRoads, prepareRoads } from './roads.js';
 import { elevatePoints } from './elevation.js';
-import { resample, analyzeRoad, segmentSustained, hardestClimb, grindMask, SAMPLE_STEP } from './metrics.js';
+import { resample, analyzeRoad, segmentSustained, hardestClimbs, grindMask, SAMPLE_STEP } from './metrics.js';
 import { initMap, drawRoads, renderList, setGrindStyle } from './render.js';
 import { searchKey, cacheGet, cachePut } from './cache.js';
 
@@ -131,6 +133,26 @@ async function run(refresh = false) {
     }
 }
 
+// Geographic bounding box of a climb's extent, padded ~50 m and cached, for
+// deduping the same physical climb reported by parallel same-name chains.
+function climbBox(e) {
+    if (e.box)
+        return e.box;
+    const pad = 0.0005;
+    let latMin = Infinity, latMax = -Infinity, lonMin = Infinity, lonMax = -Infinity;
+    for (let k = e.climb.i; k <= e.climb.j; k++) {
+        const s = e.road.samples[k];
+        latMin = Math.min(latMin, s.lat);
+        latMax = Math.max(latMax, s.lat);
+        lonMin = Math.min(lonMin, s.lon);
+        lonMax = Math.max(lonMax, s.lon);
+    }
+    e.box = [latMin - pad, latMax + pad, lonMin - pad, lonMax + pad];
+    return e.box;
+}
+
+const boxOverlap = (a, b) => a[0] <= b[1] && b[0] <= a[1] && a[2] <= b[3] && b[2] <= a[3];
+
 // Re-rank and redraw from cached results (window-length / min-length / theme
 // changes don't refetch anything — the elevation profiles are kept per road).
 function render() {
@@ -145,27 +167,69 @@ function render() {
             r.segs = segmentSustained(r.samples, r.elev, windowM);
             r.value = r.segs ? r.segs.reduce((m, v) => Math.max(m, v), 0) : null;
             r.paint = null;
-            r.topClimb = false;
+            r.topExtents = null;
             return r;
         })
         .filter(r => r.value != null); // shorter-than-window roads have no value
+    let entries; // list rows: [{road, climb|null}]
     if (rankMode === 'climb') {
         // Climbs don't depend on the window; memoized until the next search.
         for (const r of ranked)
-            if (r.climb === undefined)
-                r.climb = hardestClimb(r.samples, r.elev);
-        ranked = ranked.filter(r => r.climb).sort((a, b) => b.climb.score - a.climb.score);
-        // Keep a climb visible across its interior flats: floor the winning
-        // climb's segments at the climb's average grade for coloring.
+            if (r.climbs === undefined)
+                r.climbs = hardestClimbs(r.samples, r.elev, 3);
+        ranked = ranked.filter(r => r.climbs.length)
+            .sort((a, b) => b.climbs[0].score - a.climbs[0].score);
+        // Keep every climb visible across its interior flats: floor its
+        // segments at the climb's average grade for coloring.
         for (const r of ranked) {
             const paint = Float64Array.from(r.segs);
-            for (let k = r.climb.i; k < r.climb.j; k++)
-                paint[k] = Math.max(paint[k], r.climb.grade);
+            for (const c of r.climbs)
+                for (let k = c.i; k < c.j; k++)
+                    paint[k] = Math.max(paint[k], c.grade);
             r.paint = paint;
         }
+        // Rows are CLIMBS: all roads' climbs compete in one pool, so a road
+        // with two distinct hills can take two spots. Same-name entries are
+        // kept only when geographically distinct — parallel carriageways and
+        // overlapping same-name chains report one row per physical climb.
+        const pool = [];
+        for (const r of ranked)
+            for (const c of r.climbs)
+                pool.push({ road: r, climb: c });
+        pool.sort((a, b) => b.climb.score - a.climb.score);
+        entries = [];
+        const keptByName = new Map();
+        for (const e of pool) {
+            if (entries.length >= listMax)
+                break;
+            if (!e.road.unnamed) {
+                const kept = keptByName.get(e.road.name) ?? [];
+                if (kept.some(k => boxOverlap(climbBox(k), climbBox(e))))
+                    continue;
+                kept.push(e);
+                keptByName.set(e.road.name, kept);
+            }
+            entries.push(e);
+        }
+        // Listed climbs wear red on the map; everything else steep is violet,
+        // so map color mirrors city-wide rank.
+        for (const e of entries)
+            (e.road.topExtents ??= []).push([e.climb.i, e.climb.j]);
     }
     else {
         ranked.sort((a, b) => b.value - a.value);
+        // The list dedupes by name (a road split into disjoint pieces keeps
+        // only its steepest piece); the map still shows every piece.
+        entries = [];
+        const seen = new Set();
+        for (const r of ranked) {
+            if (!r.unnamed && seen.has(r.name))
+                continue;
+            seen.add(r.name);
+            entries.push({ road: r, climb: null });
+            if (entries.length >= listMax)
+                break;
+        }
     }
 
     // Long-incline acknowledgment: mostly monotonic, >= 2% stretches at least
@@ -177,32 +241,14 @@ function render() {
         }
     }
 
-    // The list dedupes by name (a road split into disjoint pieces keeps only
-    // its steepest piece); the map still shows every piece. In climb mode the
-    // listed roads' climbs wear red on the map; everything else steep is
-    // violet, so map color mirrors city-wide rank.
-    const seen = new Set();
-    const top = [];
-    for (const r of ranked) {
-        if (!r.unnamed && seen.has(r.name))
-            continue;
-        seen.add(r.name);
-        top.push(r);
-        if (top.length >= listMax)
-            break;
-    }
-    if (rankMode === 'climb')
-        for (const r of top)
-            r.topClimb = true;
-
     layer?.remove();
     layer = drawRoads(map, ranked, windowM, mode(), rankMode);
-    updateLegend(mode(), rankMode, top.length);
+    updateLegend(mode(), rankMode, entries.length);
 
-    renderList(byId('road-list'), top, mode(), {
+    renderList(byId('road-list'), entries, mode(), {
         rankMode,
-        onHover: (road, on) => layer.highlight(road, on),
-        onClick: road => layer.focus(road),
+        onHover: (entry, on) => layer.highlight(entry.road, on),
+        onClick: entry => layer.focus(entry.road, entry.climb),
     });
 
     byId('list-title').textContent = rankMode === 'climb'

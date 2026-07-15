@@ -117,8 +117,13 @@ const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&
 // segK: index of the ~25 m sample segment nearest the click, when the popup
 // was opened by clicking the map (null when opened from the list).
 function popupHtml(road, stretchValue, windowM, segK) {
-    const climbRow = road.climb
-        ? `<div class="popup-row"><span>Hardest climb</span><b>↑${Math.round(road.climb.gain)} m @ ${fmtPct(road.climb.grade)} over ${fmtLen(road.climb.span)}</b></div>`
+    // Describe the climb containing the clicked segment if there is one,
+    // otherwise the road's hardest.
+    const climbs = road.climbs ?? [];
+    const containing = segK != null ? climbs.find(c => segK >= c.i && segK < c.j) : null;
+    const shown = containing ?? climbs[0];
+    const climbRow = shown
+        ? `<div class="popup-row"><span>${containing ? 'This climb' : 'Hardest climb'}</span><b>↑${Math.round(shown.gain)} m @ ${fmtPct(shown.grade)} over ${fmtLen(shown.span)}</b></div>`
         : '';
     let localRows;
     if (segK != null) {
@@ -338,7 +343,7 @@ export function drawRoads(map, ranked, windowM, mode, rankMode = 'sustained') {
     map.getPane('inclines').style.opacity = GRIND_OPACITY;
     map._inclineRenderer ??= L.canvas({ pane: 'inclines', padding: 0.3 });
     const group = L.layerGroup().addTo(map);
-    const lines = new Map(); // road -> { skeleton, chunks:[{line, inClimb}], steepest, steepestClimb }
+    const lines = new Map(); // road -> { skeleton, chunks:[{poly, ...}], steepest, dp }
     const isClimbMode = rankMode === 'climb';
 
     function setHighlight(road, on) {
@@ -346,7 +351,7 @@ export function drawRoads(map, ranked, windowM, mode, rankMode = 'sustained') {
         if (!e)
             return;
         e.skeleton.setStyle({ opacity: on ? 0.55 : 0 });
-        const emphasizeClimb = isClimbMode && road.climb;
+        const emphasizeClimb = isClimbMode && road.topExtents?.length;
         for (const { poly, inClimb, isGrind } of e.chunks) {
             if (isGrind) {
                 // Hover fattens the outline; the pane keeps it translucent.
@@ -369,7 +374,7 @@ export function drawRoads(map, ranked, windowM, mode, rankMode = 'sustained') {
             color: '#898781', weight: 2, opacity: 0, interactive: false,
         }).addTo(fg);
         const chunks = [];
-        let steepest = null, steepestClimb = null;
+        let steepest = null;
         let clickK = null; // set by a map click just before the bound popup opens
         const geom = roadGeometry(map, dp.verts);
         const lastK = road.samples.length - 1;
@@ -393,7 +398,8 @@ export function drawRoads(map, ranked, windowM, mode, rankMode = 'sustained') {
                 return popupHtml(road, stretchValue, windowM, k);
             });
         };
-        const split = isClimbMode && road.climb ? new Set([road.climb.i, road.climb.j]) : null;
+        // Hue changes exactly at listed-climb extent boundaries.
+        const split = isClimbMode && road.topExtents ? new Set(road.topExtents.flat()) : null;
 
         // Long-incline underlay: one continuous ribbon per incline run. Its
         // altitude-flare width accumulates over the whole run; the pane keeps
@@ -441,7 +447,8 @@ export function drawRoads(map, ranked, windowM, mode, rankMode = 'sustained') {
         for (const chunk of colorChunks(road, split)) {
             // Red is reserved for the listed (top-N) roads' climbs, so map
             // color mirrors the ranking; other roads' climbs stay violet.
-            const inClimb = isClimbMode && road.topClimb && road.climb && chunk.kStart >= road.climb.i && chunk.kStart < road.climb.j;
+            const inClimb = !!(isClimbMode &&
+                road.topExtents?.some(([ci, cj]) => chunk.kStart >= ci && chunk.kStart < cj));
             const hue = inClimb ? 'climb' : 'other';
             const prev = runs[runs.length - 1];
             if (prev && prev.hue === hue && prev.kEnd === chunk.kStart) {
@@ -466,21 +473,17 @@ export function drawRoads(map, ranked, windowM, mode, rankMode = 'sustained') {
                 });
                 wirePopup(poly, chunk.value);
                 poly.addTo(fg);
-                chunks.push({ poly, inClimb: run.inClimb, iStart, iEnd, widthAt });
+                chunks.push({ poly, inClimb: run.inClimb, kStart: chunk.kStart, kEnd: chunk.kEnd, paintVal: chunk.paint, iStart, iEnd, widthAt });
                 if (!steepest || chunk.paint > steepest.chunkPaint) {
                     steepest = poly;
                     steepest.chunkPaint = chunk.paint;
-                }
-                if (run.inClimb && (!steepestClimb || chunk.paint > steepestClimb.chunkPaint)) {
-                    steepestClimb = poly;
-                    steepestClimb.chunkPaint = chunk.paint;
                 }
             }
         }
         fg.on('mouseover', () => setHighlight(road, true));
         fg.on('mouseout', () => setHighlight(road, false));
         fg.addTo(group);
-        lines.set(road, { skeleton, chunks, steepest, steepestClimb, dp });
+        lines.set(road, { skeleton, chunks, steepest, dp });
     }
 
     // Pixel-based widths mean the ribbon geometry is zoom-dependent.
@@ -501,16 +504,29 @@ export function drawRoads(map, ranked, windowM, mode, rankMode = 'sustained') {
     return {
         group,
         highlight: setHighlight,
-        focus(road) {
+        focus(road, climb) {
             const e = lines.get(road);
             if (!e)
                 return;
-            // Frame the climb in climb mode, the whole road otherwise.
-            const pts = isClimbMode && road.climb
-                ? road.samples.slice(road.climb.i, road.climb.j + 1)
+            // Frame the given climb (or the road's hardest) in climb mode,
+            // the whole road otherwise.
+            const target = isClimbMode ? climb ?? road.climbs?.[0] : null;
+            const pts = target
+                ? road.samples.slice(target.i, target.j + 1)
                 : road.samples;
             map.fitBounds(L.latLngBounds(pts.map(s => [s.lat, s.lon])).pad(0.3));
-            (e.steepestClimb ?? e.steepest)?.openPopup();
+            if (target) {
+                // Open the popup on the steepest drawn chunk within the climb.
+                let bestChunk = null;
+                for (const c of e.chunks)
+                    if (!c.isGrind && c.kEnd > target.i && c.kStart < target.j &&
+                        (!bestChunk || c.paintVal > bestChunk.paintVal))
+                        bestChunk = c;
+                (bestChunk?.poly ?? e.steepest)?.openPopup();
+            }
+            else {
+                e.steepest?.openPopup();
+            }
         },
         remove() {
             map.off('zoomend', rebuild);
@@ -522,32 +538,33 @@ export function drawRoads(map, ranked, windowM, mode, rankMode = 'sustained') {
 // Ranked bar list in the sidebar: rank, name, value bar, value label. In
 // sustained mode the bar wears the road's grade color (the map color key); in
 // climb mode bar length is the climb score and the color is the climb's grade.
-export function renderList(el, roads, mode, { rankMode = 'sustained', onHover, onClick }) {
+export function renderList(el, entries, mode, { rankMode = 'sustained', onHover, onClick }) {
     const color = makeGradeColor(RAMPS[mode]);
     const isClimb = rankMode === 'climb';
     el.replaceChildren();
-    if (!roads.length)
+    if (!entries.length)
         return;
-    const top = (isClimb ? roads[0].climb.score : roads[0].value) || 1e-9;
-    roads.forEach((road, i) => {
+    const top = (isClimb ? entries[0].climb.score : entries[0].road.value) || 1e-9;
+    entries.forEach((entry, i) => {
+        const { road, climb } = entry;
         const row = document.createElement('button');
         row.type = 'button';
         row.className = 'road-row';
-        const value = isClimb ? road.climb.score : road.value;
+        const value = isClimb ? climb.score : road.value;
         const sub = isClimb
-            ? `↑${Math.round(road.climb.gain)} m @ ${fmtPct(road.climb.grade)} over ${fmtLen(road.climb.span)}`
+            ? `↑${Math.round(climb.gain)} m @ ${fmtPct(climb.grade)} over ${fmtLen(climb.span)}`
             : fmtLen(road.length);
         row.innerHTML = `
             <span class="road-rank">${i + 1}</span>
             <span class="road-main">
                 <span class="road-name">${esc(road.name)}</span>
                 <span class="road-sub">${sub}</span>
-                <span class="road-track"><span class="road-bar" style="width:${Math.max(2, (value / top) * 100)}%;background:${color(isClimb ? road.climb.grade : road.value)}"></span></span>
+                <span class="road-track"><span class="road-bar" style="width:${Math.max(2, (value / top) * 100)}%;background:${color(isClimb ? climb.grade : road.value)}"></span></span>
             </span>
             <span class="road-value">${isClimb ? value.toFixed(1) : fmtPct(value)}</span>`;
-        row.addEventListener('mouseenter', () => onHover(road, true));
-        row.addEventListener('mouseleave', () => onHover(road, false));
-        row.addEventListener('click', () => onClick(road));
+        row.addEventListener('mouseenter', () => onHover(entry, true));
+        row.addEventListener('mouseleave', () => onHover(entry, false));
+        row.addEventListener('click', () => onClick(entry));
         el.appendChild(row);
     });
 }
