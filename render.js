@@ -183,6 +183,12 @@ export function initMap(el, mode) {
 
 const fmtPct = g => `${(g * 100).toFixed(1)}%`;
 const fmtLen = m => m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${Math.round(m)} m`;
+// Compact rise/run form (↑43m/299m ≈ 14.3%): wraps less than "↑43 m @ 14.3%
+// over 299 m" in the narrow list, and with both lengths in metres the ratio
+// reads directly as the grade. The ≈ (not =) is honest: the shown lengths are
+// rounded, so they don't divide to exactly the displayed grade. Shared by the
+// list rows and the map popup.
+const fmtClimb = c => `↑${Math.round(c.gain)}m/${Math.round(c.span)}m ≈ ${fmtPct(c.grade)}`;
 const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
 // segK: index of the ~25 m sample segment nearest the click, when the popup
@@ -194,7 +200,7 @@ function popupHtml(road, stretchValue, windowM, segK) {
     const containing = segK != null ? climbs.find(c => segK >= c.i && segK < c.j) : null;
     const shown = containing ?? climbs[0];
     const climbRow = shown
-        ? `<div class="popup-row"><span>${containing ? 'This climb' : 'Hardest climb'}</span><b>↑${Math.round(shown.gain)} m @ ${fmtPct(shown.grade)} over ${fmtLen(shown.span)}</b></div>`
+        ? `<div class="popup-row"><span>${containing ? 'This climb' : 'Hardest climb'}</span><b>${fmtClimb(shown)}</b></div>`
         : '';
     let localRows;
     if (segK != null) {
@@ -214,7 +220,7 @@ function popupHtml(road, stretchValue, windowM, segK) {
             const span = road.samples[b + 1].d - road.samples[a].d;
             const gain = Math.abs(road.elev[b + 1] - road.elev[a]);
             localRows += `
-        <div class="popup-row"><span>Long incline</span><b>↑${Math.round(gain)} m @ ${fmtPct(gain / span)} over ${fmtLen(span)}</b></div>`;
+        <div class="popup-row"><span>Long incline</span><b>${fmtClimb({ gain, span, grade: gain / span })}</b></div>`;
         }
     }
     else {
@@ -623,7 +629,7 @@ export function renderList(el, entries, mode, { rankMode = 'sustained', onHover,
         row.className = 'road-row';
         const value = isClimb ? climb.score : road.value;
         const sub = isClimb
-            ? `↑${Math.round(climb.gain)} m @ ${fmtPct(climb.grade)} over ${fmtLen(climb.span)}`
+            ? fmtClimb(climb)
             : fmtLen(road.length);
         row.innerHTML = `
             <span class="road-rank">${i + 1}</span>
