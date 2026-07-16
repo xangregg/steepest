@@ -133,6 +133,12 @@ assert(shoulder.score > 4.35 && shoulder.score < 5.2,
 const steady = hardestClimb(flat, mkElev(d => Math.min(d, 500) * 0.10));
 assert(Math.abs(steady.score - steady.gain ** 2 / steady.span) < 0.15,
     `steady climb: integral ≈ gain²/span (${steady.score.toFixed(2)} vs ${(steady.gain ** 2 / steady.span).toFixed(2)})`);
+// Asymmetric extension: a 3.5% shoulder (between the 4% bottom and 3% top
+// thresholds) belongs to the climb when it's the finish but not the approach.
+const topShoulder = hardestClimb(flat, mkElev(d => d < 300 ? d * 0.12 : d < 500 ? 36 + (d - 300) * 0.035 : 43));
+assert(topShoulder.span > 420, `3.5% finish extends the climb: span ${topShoulder.span.toFixed(0)} m`);
+const botShoulder = hardestClimb(flat, mkElev(d => d < 200 ? d * 0.035 : d < 500 ? 7 + (d - 200) * 0.12 : 43));
+assert(botShoulder.span < 360, `3.5% approach excluded from the climb: span ${botShoulder.span.toFixed(0)} m`);
 
 // Multiple climbs: two hills separated by a real dip are extracted as two
 // non-overlapping climbs, best first (plus the dip itself as a lesser climb

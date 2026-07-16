@@ -285,17 +285,20 @@ export function grindMask(samples, elev, minSpan) {
     return mask.some(v => v) ? mask : null;
 }
 
-const TRIM_KEEP = 0.95;  // report the shortest interval keeping this share of the best score
-const EXT_MIN_GRADE = 0.05; // extend the reported extent over adjacent climbing this steep
+// Extend the reported extent over adjacent climbing at least this steep. The top
+// (end of the climb in the travel direction) uses a gentler threshold than the
+// bottom, since a slight rise feels tougher late in a long climb.
+const EXT_TOP_GRADE = 0.03; // at the climb's end (in the travel direction)
+const EXT_BOT_GRADE = 0.04; // at the climb's start
 
 // Up to maxCount non-overlapping hardest climbs on a road, best first, in
 // either travel direction, so a road with two distinct hills can surface both.
 // Each climb's extent is found by maximizing gain²/length (gain × average
 // grade, FIETS-style) over intervals that are genuine climbs — interior
 // descent, as experienced by the traveler, at most max(DIP_ABS, DIP_FRAC ×
-// ascent) — then tightened to the shortest interval keeping TRIM_KEEP of that
-// maximum, then extended over adjacent segments still climbing at
-// >= extMinGrade. Later climbs may not overlap earlier ones' extents.
+// ascent) — then extended over adjacent segments still climbing (>= EXT_BOT_GRADE
+// at the start, the gentler EXT_TOP_GRADE at the end). Later climbs may not
+// overlap earlier ones' extents.
 // The reported score is the effort integral over the extent:
 // Σ segment length × grade², which equals gain²/length on a steady climb but
 // is additive — every stretch of real climbing raises it, so a 5% shoulder
@@ -303,7 +306,7 @@ const EXT_MIN_GRADE = 0.05; // extend the reported extent over adjacent climbing
 // Exact search over all sample pairs; roads are a few hundred samples at
 // most, and results are memoized per road. Each climb is {score, gain, span,
 // grade, i, j, dir}.
-export function hardestClimbs(samples, elev, maxCount = 3, extMinGrade = EXT_MIN_GRADE) {
+export function hardestClimbs(samples, elev, maxCount = 3) {
     const n = samples.length;
     if (n < 2)
         return [];
@@ -337,25 +340,32 @@ export function hardestClimbs(samples, elev, maxCount = 3, extMinGrade = EXT_MIN
         }
         if (!best || best.gain < DIP_ABS)
             break;
-        let tight = best;
-        const floor = TRIM_KEEP * best.score;
-        for (let i = 0; i < n - 1; i++) {
-            for (let j = i + 1; j < n; j++) {
-                const c = evalPair(i, j);
-                if (c && c.score >= floor && c.span < tight.span)
-                    tight = c;
-            }
-        }
+        // A former step here tightened `best` to the shortest interval keeping
+        // 95% of its score before extending. Measured (Pittsburgh, ~1800 roads)
+        // to be a no-op for every rankable climb: whenever half the average
+        // grade exceeds the extension floor (roughly avg > 8%), extension below
+        // re-grows the extent past any trim, so only gentle, low-scoring climbs'
+        // extents changed at all and no ranking moved. Dropped for simplicity.
+        // If the extension floors (EXT_TOP/BOT_GRADE) rise much, restoring the
+        // trim may again matter, to stop gentle climbs reporting extents that
+        // reach below the floor via the argmax's implicit half-average cutoff.
+        //
         // gain²/span only admits a tail steeper than half the climb's average,
         // so a 12% climb would disown a 5% finish. Extend the reported extent
-        // over adjacent unclaimed segments still climbing at >= extMinGrade in
-        // the travel direction; the score stays the core's (the extension
-        // describes extent, not extra hardness).
-        let { i, j } = tight;
-        const climbGrade = k => ((elev[k + 1] - elev[k]) * tight.dir) / (samples[k + 1].d - samples[k].d);
-        while (j < n - 1 && !taken[j] && climbGrade(j) >= extMinGrade)
+        // over adjacent unclaimed segments still climbing in the travel
+        // direction, gently enough to belong. The final score below is the
+        // additive effort integral over this extent, so those shoulders add to
+        // it rather than diluting it the way they would the gain²/span ratio.
+        let { i, j } = best;
+        const climbGrade = k => ((elev[k + 1] - elev[k]) * best.dir) / (samples[k + 1].d - samples[k].d);
+        // Top gets the gentler threshold. Which array end is the top depends on
+        // travel direction: a backward climb (dir < 0) runs from high index
+        // (its bottom) to low index (its top).
+        const jGrade = best.dir > 0 ? EXT_TOP_GRADE : EXT_BOT_GRADE;
+        const iGrade = best.dir > 0 ? EXT_BOT_GRADE : EXT_TOP_GRADE;
+        while (j < n - 1 && !taken[j] && climbGrade(j) >= jGrade)
             j++;
-        while (i > 0 && !taken[i - 1] && climbGrade(i - 1) >= extMinGrade)
+        while (i > 0 && !taken[i - 1] && climbGrade(i - 1) >= iGrade)
             i--;
         const gain = Math.abs(elev[j] - elev[i]);
         const span = samples[j].d - samples[i].d;
@@ -363,11 +373,11 @@ export function hardestClimbs(samples, elev, maxCount = 3, extMinGrade = EXT_MIN
         // and tolerated counter-slope inside the extent contribute nothing.
         let score = 0;
         for (let k = i; k < j; k++) {
-            const de = (elev[k + 1] - elev[k]) * tight.dir;
+            const de = (elev[k + 1] - elev[k]) * best.dir;
             if (de > 0)
                 score += (de * de) / (samples[k + 1].d - samples[k].d);
         }
-        climbs.push({ ...tight, i, j, gain, span, grade: gain / span, score });
+        climbs.push({ ...best, i, j, gain, span, grade: gain / span, score });
         for (let k = i; k < j; k++)
             taken[k] = 1;
         for (let k = 0; k < n - 1; k++)
@@ -377,6 +387,6 @@ export function hardestClimbs(samples, elev, maxCount = 3, extMinGrade = EXT_MIN
 }
 
 // A road's single hardest climb (or null) — the head of hardestClimbs.
-export function hardestClimb(samples, elev, extMinGrade = EXT_MIN_GRADE) {
-    return hardestClimbs(samples, elev, 1, extMinGrade)[0] ?? null;
+export function hardestClimb(samples, elev) {
+    return hardestClimbs(samples, elev, 1)[0] ?? null;
 }
