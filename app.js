@@ -20,7 +20,7 @@
 import { parseLatLon, geocode, fetchRoads, prepareRoads } from './roads.js';
 import { elevatePoints } from './elevation.js';
 import { resample, analyzeRoad, segmentSustained, hardestClimbs, grindMask, SAMPLE_STEP } from './metrics.js';
-import { initMap, drawRoads, renderList, setGrindStyle } from './render.js';
+import { initMap, drawRoads, renderList, setGrindStyle, setRampStyle } from './render.js';
 import { searchKey, cacheGet, cachePut } from './cache.js';
 
 const byId = id => document.getElementById(id);
@@ -314,9 +314,15 @@ darkQuery.addEventListener('change', () => {
 // Dev-tools hook for live style experiments (re-renders from cached data):
 //   steepest.grind({ light: '#8a93a5', opacity: 0.4 })
 //   steepest.grind({ dark: '#5f6a78' })
+//   steepest.ramp({ light: { mid: '#ff0000', hi: '#330000' } })
+//   steepest.ramp({ hue: 'violet', dark: { mid: '#9a6cff' } })
 window.steepest = {
     grind(opts) {
         setGrindStyle(opts);
+        render();
+    },
+    ramp(opts) {
+        setRampStyle(opts);
         render();
     },
 };

@@ -1,9 +1,13 @@
 // Map + sidebar rendering.
 //
 // Roads draw as mitered ribbon polygons (not stroked lines), split into
-// constant-color chunks. Color: sequential ramps over a fixed 5–25 % grade
-// domain — in climb mode, red for the listed top-N roads' climbs and violet
-// for other steep stretches; below 5 % nothing is painted (short crest gaps
+// constant-color chunks. Color: two-segment sequential ramps over a fixed
+// 5–25 % grade domain, interpolated in Oklab so equal grade steps read as
+// equal color steps (perceptually uniform within each segment). Each ramp runs
+// pale → full-chroma at GRADE_BREAK (12 %) → deep, so a road's steepest pitches
+// stand out from its merely-steep ones. In climb mode, red for the listed
+// top-N roads' climbs and violet for other steep stretches; below 5 % nothing
+// is painted (short crest gaps
 // close at the palest step). Each segment's color is capped at its own local
 // grade so paint never claims steepness the ground doesn't have. Width flares
 // with altitude above each run's base (thin -> thick = uphill). Ribbon
@@ -18,20 +22,28 @@
 import { haversine, SAMPLE_STEP, GRIND_MIN_GRADE } from './metrics.js';
 
 export const GRADE_MIN = 0.05; // below this a segment gets no highlight at all
-export const GRADE_MAX = 0.25; // ramp saturates at a 25% grade
+export const GRADE_BREAK = 0.12; // grade where the ramp reaches full-chroma color
+export const GRADE_MAX = 0.25; // ramp bottoms out (deepest color) at a 25% grade
 
+// Each ramp is three anchor colors — pale (lo) at GRADE_MIN, full-chroma (mid)
+// at GRADE_BREAK, deep (hi) at GRADE_MAX — interpolated in Oklab (see
+// makeGradeColor). Light mode runs pale -> chroma -> dark (lightness falls as
+// grade rises, so steeper = darker against the light basemap); dark mode is
+// inverted (dark -> chroma -> pale), so steeper = brighter against the dark
+// basemap. The dark-mode lo isn't as dark as the light-mode hi, so the gentlest
+// painted grade still separates from the near-black basemap.
 export const RAMPS = {
-    light: ['#fbd0cd', '#f5a8a3', '#ee7f7a', '#e34948', '#c22d2c', '#9c1f1f', '#7a1414'],
-    dark: ['#4a1210', '#7a1414', '#a02020', '#c22d2c', '#e34948', '#f07f79', '#f9b2ad'],
+    light: { lo: '#fbd3d0', mid: '#dd2c22', hi: '#3f0b09' },
+    dark: { lo: '#5a1512', mid: '#e5352a', hi: '#fbd3d0' },
 };
 
 // Second sequential context (climb mode's "steep but not the hardest climb"):
-// its own single-hue ramp over the same 5–25 % domain. Violet reads clearly
-// against the gray basemap (cyan sank into it), stays well away from the climb
-// reds, and the hue pair survives red-green color-vision deficiency.
+// its own single-hue ramp over the same domain. Violet reads clearly against
+// the gray basemap (cyan sank into it), stays well away from the climb reds,
+// and the hue pair survives red-green color-vision deficiency.
 export const RAMPS_ALT = {
-    light: ['#e4d9f7', '#cbb8ef', '#b096e5', '#9273d8', '#7657c4', '#5d41a6', '#452e85'],
-    dark: ['#332057', '#452e85', '#5940a3', '#7657c4', '#9273d8', '#b096e5', '#d3c3f2'],
+    light: { lo: '#e6dcf8', mid: '#7c46dd', hi: '#241541' },
+    dark: { lo: '#2e1a52', mid: '#8a55e8', hi: '#e6dcf8' },
 };
 
 // Categorical (non-gradient) color for long-incline stretches — mostly
@@ -54,24 +66,84 @@ export function setGrindStyle({ light, dark, opacity } = {}) {
         GRIND_OPACITY = opacity;
 }
 
+// Tweak ramp anchors live: hue 'red' (RAMPS) or 'violet' (RAMPS_ALT); light/dark
+// are partial { lo, mid, hi } patches merged into that mode's anchors.
+export function setRampStyle({ hue = 'red', light, dark } = {}) {
+    const target = hue === 'violet' ? RAMPS_ALT : RAMPS;
+    if (light)
+        Object.assign(target.light, light);
+    if (dark)
+        Object.assign(target.dark, dark);
+}
+
 const BASEMAPS = {
     light: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
     dark: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
 };
 const BASEMAP_ATTR = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>';
 
-const hexToRgb = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
+// --- Oklab color math (Björn Ottosson's Oklab) --------------------------
+// We interpolate ramp colors in Oklab, not sRGB, because Oklab is
+// perceptually uniform: a straight line sampled at even steps yields even
+// perceived color steps. Plain sRGB interpolation would bunch the visible
+// change unevenly along the ramp. No dependency — the transforms are a few
+// matrix multiplies plus a gamma curve.
+const srgbToLin = c => (c /= 255) <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+const linToSrgb = c => {
+    const v = c <= 0.0031308 ? 12.92 * c : 1.055 * c ** (1 / 2.4) - 0.055;
+    return Math.round(Math.max(0, Math.min(1, v)) * 255);
+};
+const hexToOklab = h => {
+    const [r, g, b] = [1, 3, 5].map(i => srgbToLin(parseInt(h.slice(i, i + 2), 16)));
+    const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b);
+    const m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b);
+    const s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
+    return [
+        0.2104542553 * l + 0.7936177850 * m - 0.0040720468 * s,
+        1.9779984951 * l - 2.4285922050 * m + 0.4505937099 * s,
+        0.0259040371 * l + 0.7827717662 * m - 0.8086757660 * s,
+    ];
+};
+const oklabToRgb = ([L, A, B]) => {
+    const l = (L + 0.3963377774 * A + 0.2158037573 * B) ** 3;
+    const m = (L - 0.1055613458 * A - 0.0638541728 * B) ** 3;
+    const s = (L - 0.0894841775 * A - 1.2914855480 * B) ** 3;
+    return [
+        linToSrgb(+4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s),
+        linToSrgb(-1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s),
+        linToSrgb(-0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s),
+    ];
+};
 
-export function makeGradeColor(rampHex) {
-    const stops = rampHex.map(hexToRgb);
+// Two-segment ramp: pale(lo) -> chroma(mid) across [GRADE_MIN, GRADE_BREAK],
+// then chroma(mid) -> deep(hi) across [GRADE_BREAK, GRADE_MAX]. Grade maps
+// linearly to position within its segment, and the color is a straight Oklab
+// lerp there, so each segment is perceptually uniform on its own.
+export function makeGradeColor({ lo, mid, hi }) {
+    const a0 = hexToOklab(lo), a1 = hexToOklab(mid), a2 = hexToOklab(hi);
     return grade => {
-        const t = Math.max(0, Math.min(1, (grade - GRADE_MIN) / (GRADE_MAX - GRADE_MIN))) * (stops.length - 1);
-        const i = Math.min(stops.length - 2, Math.floor(t));
-        const f = t - i;
-        const c = stops[i].map((v, k) => Math.round(v + (stops[i + 1][k] - v) * f));
+        const g = Math.max(GRADE_MIN, Math.min(GRADE_MAX, grade));
+        const low = g <= GRADE_BREAK;
+        const from = low ? a0 : a1;
+        const to = low ? a1 : a2;
+        const t = low
+            ? (g - GRADE_MIN) / (GRADE_BREAK - GRADE_MIN)
+            : (g - GRADE_BREAK) / (GRADE_MAX - GRADE_BREAK);
+        const c = oklabToRgb(from.map((v, k) => v + (to[k] - v) * t));
         return `rgb(${c[0]},${c[1]},${c[2]})`;
     };
 }
+
+// A CSS gradient for the legend: sample the ramp at even grade steps (which,
+// being uniform in grade, map to evenly spaced stops) so the swatch shows the
+// same two-segment curve the map uses, kink and all.
+const RAMP_SAMPLES = 13;
+const rampCss = anchors => {
+    const color = makeGradeColor(anchors);
+    const stops = Array.from({ length: RAMP_SAMPLES }, (_, i) =>
+        color(GRADE_MIN + (GRADE_MAX - GRADE_MIN) * i / (RAMP_SAMPLES - 1)));
+    return `linear-gradient(to right, ${stops.join(',')})`;
+};
 
 export function initMap(el, mode) {
     const map = L.map(el, { renderer: L.canvas({ padding: 0.3 }) });
@@ -90,7 +162,6 @@ export function initMap(el, mode) {
     legend.addTo(map);
 
     const barDiv = bg => `<div class="legend-bar" style="background:${bg}"></div>`;
-    const rampBg = ramp => `linear-gradient(to right, ${ramp.join(',')})`;
     const ticks = `<div class="legend-ticks"><span>${Math.round(GRADE_MIN * 100)}%</span><span>${+((GRADE_MIN + GRADE_MAX) * 50).toFixed(1)}%</span><span>${Math.round(GRADE_MAX * 100)}%+</span></div>`;
     const updateLegend = (m, rankMode = 'sustained', topN = 25) => {
         // Below the ticks and swatch-sized, so the % scale clearly doesn't
@@ -98,11 +169,11 @@ export function initMap(el, mode) {
         const grindRow = `<div class="legend-row legend-grind"><div class="legend-swatch" style="background:${GRIND_COLORS[m]};opacity:${GRIND_OPACITY}"></div><span class="legend-label">long incline (≥${+(GRIND_MIN_GRADE * 100).toFixed(2)}%)</span></div>`;
         legendDiv.innerHTML = rankMode === 'climb'
             ? `<div class="legend-title">grade</div>
-               <div class="legend-row">${barDiv(rampBg(RAMPS[m]))}<span class="legend-label">top ${topN} climbs</span></div>
-               <div class="legend-row">${barDiv(rampBg(RAMPS_ALT[m]))}<span class="legend-label">other steep</span></div>
+               <div class="legend-row">${barDiv(rampCss(RAMPS[m]))}<span class="legend-label">top ${topN} climbs</span></div>
+               <div class="legend-row">${barDiv(rampCss(RAMPS_ALT[m]))}<span class="legend-label">other steep</span></div>
                ${ticks}${grindRow}`
             : `<div class="legend-title">grade</div>
-               <div class="legend-row">${barDiv(rampBg(RAMPS[m]))}<span class="legend-label">steepness</span></div>
+               <div class="legend-row">${barDiv(rampCss(RAMPS[m]))}<span class="legend-label">steepness</span></div>
                ${ticks}${grindRow}`;
     };
     updateLegend(mode);
