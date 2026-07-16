@@ -37,10 +37,22 @@ header {
     border-bottom: 1px solid var(--hairline);
     background: var(--surface);
 }
+.title-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 12px;
+    margin-bottom: 8px;
+}
 header h1 {
-    margin: 0 0 8px;
+    margin: 0; /* the title-row now owns the bottom margin */
     font-size: 1.05rem;
     font-weight: 650;
+}
+.repo-link {
+    font-size: 0.8rem;
+    color: var(--ink-2);
+    white-space: nowrap;
 }
 #controls {
     display: flex;
