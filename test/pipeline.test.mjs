@@ -43,6 +43,17 @@ const bore = prepareRoads([
 ]);
 import { elevatePoints } from '../elevation.js';
 import { resample, analyzeRoad, segmentSustained, sustainedGrade, hardestClimb, hardestClimbs, grindMask, SAMPLE_STEP } from '../metrics.js';
+import { abbrevName } from '../render.js';
+
+// Street-type abbreviation (display only): common type words shorten, but only
+// as whole Title-Case words, so a name that merely starts with those letters
+// is left alone.
+assert(abbrevName('Pritchard Avenue Extension') === 'Pritchard Ave Ext',
+    `abbrev: ${abbrevName('Pritchard Avenue Extension')}`);
+assert(abbrevName('Martin Luther King Jr Boulevard') === 'Martin Luther King Jr Blvd', 'abbrev Blvd');
+assert(abbrevName('Streetman Road') === 'Streetman Rd', 'abbrev keeps Streetman, shortens Road');
+assert(abbrevName('Roadside Lane') === 'Roadside Ln', 'abbrev keeps Roadside, shortens Lane');
+assert(abbrevName('Franklin Street') === 'Franklin St', 'abbrev St');
 
 const decodeTile = async url => {
     const res = await fetch(url);

@@ -191,6 +191,21 @@ const fmtLen = m => m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${Math.round(m)
 const fmtClimb = c => `↑${Math.round(c.gain)}m/${Math.round(c.span)}m ≈ ${fmtPct(c.grade)}`;
 const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
+// Shorten common street-type words for the narrow list, so long names wrap
+// less ("Pritchard Avenue Extension" -> "Pritchard Ave Ext"). Display only —
+// road.name stays intact (it keys the dedup, and the popup shows it in full).
+// Whole-word, Title-Case matches only, so a name like "Streetman Road" or
+// "Roadside Lane" keeps its first word untouched.
+const NAME_ABBREV = {
+    Avenue: 'Ave', Street: 'St', Road: 'Rd', Drive: 'Dr', Boulevard: 'Blvd',
+    Lane: 'Ln', Court: 'Ct', Place: 'Pl', Circle: 'Cir', Terrace: 'Ter',
+    Parkway: 'Pkwy', Highway: 'Hwy', Extension: 'Ext', Trail: 'Trl',
+    Square: 'Sq', Crescent: 'Cres', Heights: 'Hts', Turnpike: 'Tpke',
+    Expressway: 'Expy', Freeway: 'Fwy', Junction: 'Jct',
+};
+const NAME_ABBREV_RE = new RegExp(`\\b(${Object.keys(NAME_ABBREV).join('|')})\\b`, 'g');
+export const abbrevName = name => name.replace(NAME_ABBREV_RE, w => NAME_ABBREV[w]);
+
 // segK: index of the ~25 m sample segment nearest the click, when the popup
 // was opened by clicking the map (null when opened from the list).
 function popupHtml(road, stretchValue, windowM, segK) {
@@ -634,7 +649,7 @@ export function renderList(el, entries, mode, { rankMode = 'sustained', onHover,
         row.innerHTML = `
             <span class="road-rank">${i + 1}</span>
             <span class="road-main">
-                <span class="road-name">${esc(road.name)}</span>
+                <span class="road-name" title="${esc(road.name)}">${esc(abbrevName(road.name))}</span>
                 <span class="road-sub">${sub}</span>
                 <span class="road-track"><span class="road-bar" style="width:${Math.max(2, (value / top) * 100)}%;background:${color(isClimb ? climb.grade : road.value)}"></span></span>
             </span>
