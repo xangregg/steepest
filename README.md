@@ -105,10 +105,12 @@ Code and docs were largely written using Claude Code (Fable 5 and Opus 4.8).
 - `app.js` — UI wiring and orchestration; its header documents the road
   object's field lifecycle. Also exposes the `window.steepest` dev hook for
   live style experiments.
-- `test/pipeline.test.mjs` — unit checks plus a live end-to-end run (real
-  Nominatim/Overpass/tiles). `test/render.html` is a visual fixture of
-  synthetic roads exercising every rendering rule; `test/cache.html` and
-  `test/cache-unit.html` cover the IndexedDB cache in a real browser.
+- `test/unit.test.mjs` — network-free checks on synthetic profiles (the default
+  `npm test`); `test/live.test.mjs` is the on-demand end-to-end run against real
+  Nominatim/Overpass/tiles (`npm run test:live`), and `test/assert.mjs` is the
+  shared assert. `test/render.html` is a visual fixture of synthetic roads
+  exercising every rendering rule; `test/cache.html` and `test/cache-unit.html`
+  cover the IndexedDB cache in a real browser.
 
 ## Running locally
 
@@ -121,9 +123,16 @@ open http://localhost:8080
 
 ## Testing
 
-`npm test` runs the full pipeline in Node (real Nominatim/Overpass/terrain-tile
-calls, with `pngjs` standing in for the canvas decoder) plus unit checks on the
-resampling and metric math. Requires `npm install` once, and network access.
+`npm test` runs the network-free unit checks (stitching, resampling, the metric
+and climb math, long-incline masking, bridge/tunnel interpolation, CSV export)
+on synthetic profiles — fast and safe for CI, no network needed.
+
+`npm run test:live` runs the on-demand end-to-end check: a real
+Nominatim/Overpass/terrain-tile run against a small town (`pngjs` stands in for
+the browser's canvas decoder), so it needs network access and is subject to the
+public servers' rate limits. `npm run test:all` runs both.
+
+All of them need `npm install` once (for `pngjs`).
 
 ## Deploying to GitHub Pages
 

@@ -1,10 +1,12 @@
-// End-to-end pipeline check in Node (no browser): geocode a real town, pull
-// roads from Overpass, sample real terrain tiles (decoded with pngjs instead of
-// canvas), and rank by sustained grade at a couple of window lengths.
-// Run with `npm test`.
+// Unit checks (no network): stitching gates, resampling, the metric math,
+// climb extraction, long-incline masking, bridge/tunnel deck interpolation,
+// CSV export, and name abbreviation — all on synthetic profiles. Run with
+// `npm test`. The live end-to-end run (Nominatim/Overpass/terrain tiles) is in
+// live.test.mjs (`npm run test:live`), so the default test suite needs no
+// network.
 
-import { PNG } from 'pngjs';
-import { geocode, parseLatLon, fetchRoads, prepareRoads } from '../roads.js';
+import { parseLatLon, prepareRoads } from '../roads.js';
+import { assert } from './assert.mjs';
 
 // Stitching bearing gate: same-name ways merge straight through a join but
 // not around a corner (distinct streets sharing a TIGER-mangled name).
@@ -41,7 +43,6 @@ const bore = prepareRoads([
     tunnelWay,
     way(7, 'Bore St', [[35.002, -77], [35.003, -77]]),
 ]);
-import { elevatePoints } from '../elevation.js';
 import { resample, analyzeRoad, segmentSustained, sustainedGrade, bestSustainedWindow, hardestClimb, hardestClimbs, grindMask, SAMPLE_STEP } from '../metrics.js';
 import { abbrevName } from '../render.js';
 import { buildCsv, csvFilename } from '../csv.js';
@@ -78,22 +79,6 @@ assert(commaCsv.includes('"A, B Road"'), 'CSV quotes a name containing a comma')
 assert(csvFilename('climb', 250, 'Chapel Hill, NC') === 'steepest-climbs-chapel-hill.csv', 'csv filename (climb)');
 assert(csvFilename('sustained', 250, 'Chapel Hill, NC') === 'steepest-sustained-250m-chapel-hill.csv', 'csv filename (sustained)');
 
-const decodeTile = async url => {
-    const res = await fetch(url);
-    if (!res.ok)
-        throw new Error(`tile HTTP ${res.status} for ${url}`);
-    return PNG.sync.read(Buffer.from(await res.arrayBuffer())).data; // flat RGBA
-};
-
-function assert(cond, msg) {
-    if (!cond) {
-        console.error(`FAIL: ${msg}`);
-        process.exit(1);
-    }
-    console.log(`ok: ${msg}`);
-}
-
-// Unit-ish checks first
 assert(chains('Straight St') === 1, 'collinear same-name ways stitch into one road');
 assert(chains('Corner St') === 2, 'right-angle same-name ways stay separate');
 assert(bore.length === 1 && resample(bore[0].pts).some(s => s.b),
@@ -240,51 +225,4 @@ const valley = allBridge.map(s => 100 + s.d * 0.02 - (s.d > 200 && s.d < 800 ? 3
 const deck = sustainedGrade(allBridge, analyzeRoad(allBridge, valley).elev, 100);
 assert(deck < 0.03, `all-bridge chain reads as its deck: ${(deck * 100).toFixed(1)}%`);
 
-// Live pipeline: small mountain town, modest radius to be kind to Overpass.
-const center = await geocode('Brevard, North Carolina');
-console.log(`geocoded: ${center.label} (${center.lat}, ${center.lon})`);
-assert(Math.abs(center.lat - 35.23) < 0.2 && Math.abs(center.lon + 82.73) < 0.2, 'geocode near expected coords');
-
-const elements = await fetchRoads(center, 2500);
-const roads = prepareRoads(elements).map(r => ({ ...r, samples: resample(r.pts) })).filter(r => r.samples.length >= 3);
-assert(roads.length > 50, `found ${roads.length} roads`);
-const stitched = roads.filter(r => !r.unnamed).length;
-console.log(`   ${stitched} named road chains after stitching`);
-
-const points = roads.flatMap(r => r.samples);
-let tiles = 0;
-const elevs = await elevatePoints(points, { decodeTile, onProgress: (d, t) => (tiles = t) });
-console.log(`   sampled ${points.length} points from ${tiles} tiles`);
-const eMin = Math.min(...elevs), eMax = Math.max(...elevs);
-assert(eMin > 400 && eMax < 2000 && eMax - eMin > 50, `elevations plausible for Brevard: ${eMin.toFixed(0)}–${eMax.toFixed(0)} m`);
-
-let offset = 0;
-for (const r of roads) {
-    Object.assign(r, analyzeRoad(r.samples, Array.from(elevs.subarray(offset, offset + r.samples.length))));
-    offset += r.samples.length;
-}
-
-const rankAt = windowM => roads
-    .map(r => ({ ...r, value: sustainedGrade(r.samples, r.elev, windowM) }))
-    .filter(r => r.value != null && r.length >= 200)
-    .sort((a, b) => b.value - a.value);
-
-const ranked = rankAt(100);
-assert(ranked.length > 20, `${ranked.length} roads pass the 200 m minimum at window 100`);
-const topG = ranked[0].value;
-assert(topG > 0.04 && topG < 0.45, `top sustained-100 grade sane: ${(topG * 100).toFixed(1)}%`);
-
-// Longer windows can only lower (or hold) a road's sustained grade.
-const at400 = new Map(rankAt(400).map(r => [r.id, r.value]));
-const monotone = ranked.every(r => !at400.has(r.id) || at400.get(r.id) <= r.value + 1e-9);
-assert(monotone, 'sustained grade is non-increasing in window length');
-
-console.log('\nTop 10 by sustained 100 m grade (min 200 m):');
-for (const r of ranked.slice(0, 10)) {
-    console.log(
-        `  ${(r.value * 100).toFixed(1).padStart(5)}%  ${r.name.padEnd(28).slice(0, 28)} ` +
-        `len ${Math.round(r.length).toString().padStart(5)} m  ` +
-        `w25 ${(sustainedGrade(r.samples, r.elev, 25) * 100).toFixed(1)}%  ` +
-        `w400 ${((sustainedGrade(r.samples, r.elev, 400) ?? 0) * 100).toFixed(1)}%`);
-}
-console.log('PASS');
+console.log('PASS (unit)');
