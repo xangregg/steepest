@@ -11,7 +11,9 @@ const csvField = v => {
     return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 };
 // A sample point as [lat, lon, elevation] for the CSV.
-const endpoint = (road, k) => [road.samples[k].lat.toFixed(6), road.samples[k].lon.toFixed(6), road.elev[k].toFixed(1)];
+// Values aren't rounded to display precision — the numbers are approximate
+// (DEM/geometry), but exposing 3 decimals keeps that detail inspectable.
+const endpoint = (road, k) => [road.samples[k].lat.toFixed(6), road.samples[k].lon.toFixed(6), road.elev[k].toFixed(3)];
 
 // Filename like steepest-climbs-chapel-hill.csv from the place label.
 export function csvFilename(rankMode, windowM, label = 'area') {
@@ -28,8 +30,8 @@ export function buildCsv({ entries, rankMode, windowM }) {
         entries.forEach(({ road, climb }, idx) => {
             const lo = climb.dir > 0 ? climb.i : climb.j; // bottom of the climb
             const hi = climb.dir > 0 ? climb.j : climb.i; // top
-            rows.push([idx + 1, road.name, climb.score.toFixed(3), (climb.grade * 100).toFixed(2),
-                Math.round(climb.gain), Math.round(climb.span), ...endpoint(road, lo), ...endpoint(road, hi)]);
+            rows.push([idx + 1, road.name, climb.score.toFixed(3), (climb.grade * 100).toFixed(3),
+                climb.gain.toFixed(3), climb.span.toFixed(3), ...endpoint(road, lo), ...endpoint(road, hi)]);
         });
     }
     else {
@@ -39,7 +41,7 @@ export function buildCsv({ entries, rankMode, windowM }) {
             const w = bestSustainedWindow(road.samples, road.elev, windowM);
             const i = w ? w.i : 0;
             const j = w ? w.j : road.samples.length - 1;
-            rows.push([idx + 1, road.name, (road.value * 100).toFixed(2), Math.round(windowM), Math.round(road.length),
+            rows.push([idx + 1, road.name, (road.value * 100).toFixed(3), Math.round(windowM), road.length.toFixed(3),
                 ...endpoint(road, i), ...endpoint(road, j)]);
         });
     }
