@@ -129,6 +129,20 @@ main { flex: 1; display: flex; min-height: 0; }
     background: var(--surface);
 }
 #sidebar h2 { margin: 0; font-size: 0.95rem; font-weight: 650; }
+.list-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+#download {
+    flex: none;
+    font: inherit;
+    font-size: 0.75rem;
+    color: var(--ink-2);
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 2px 8px;
+    cursor: pointer;
+    white-space: nowrap;
+}
+#download:hover { border-color: var(--muted); }
 #list-sub { margin: 2px 0 10px; font-size: 0.78rem; color: var(--muted); }
 
 .road-row {

@@ -22,6 +22,7 @@ import { elevatePoints } from './elevation.js';
 import { resample, analyzeRoad, segmentSustained, hardestClimbs, grindMask, SAMPLE_STEP } from './metrics.js';
 import { initMap, drawRoads, renderList, setGrindStyle, setRampStyle } from './render.js';
 import { searchKey, cacheGet, cachePut } from './cache.js';
+import { buildCsv, csvFilename } from './csv.js';
 
 const byId = id => document.getElementById(id);
 
@@ -33,6 +34,7 @@ const { map, setMode, updateLegend } = initMap(byId('map'), mode());
 let state = null;   // { roads, center, radiusM, label } after a successful run
 let layer = null;   // drawRoads handle
 let abort = null;
+let downloadCtx = null;  // { entries, rankMode, windowM, filename } for CSV export
 
 // progress: undefined hides the bar, null shows an indeterminate sweep, a
 // number in [0,1] shows a determinate fill.
@@ -251,6 +253,9 @@ function render() {
         onClick: entry => layer.focus(entry.road, entry.climb),
     });
 
+    downloadCtx = { entries, rankMode, windowM, filename: csvFilename(rankMode, windowM, state.label) };
+    byId('download').hidden = entries.length === 0;
+
     byId('list-title').textContent = rankMode === 'climb'
         ? 'Hardest climbs — gain × grade'
         : `Steepest roads — sustained ${windowM} m`;
@@ -292,6 +297,20 @@ function updateHash(query) {
     });
     history.replaceState(null, '', '#' + p.toString());
 }
+
+// Download the current ranking as CSV (built in csv.js; columns vary by mode).
+function downloadCsv() {
+    if (!downloadCtx || !downloadCtx.entries.length)
+        return;
+    const blob = new Blob([buildCsv(downloadCtx)], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = downloadCtx.filename;
+    a.click();
+    URL.revokeObjectURL(url);
+}
+byId('download').addEventListener('click', downloadCsv);
 
 byId('controls').addEventListener('submit', e => {
     e.preventDefault();

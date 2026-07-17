@@ -42,8 +42,9 @@ const bore = prepareRoads([
     way(7, 'Bore St', [[35.002, -77], [35.003, -77]]),
 ]);
 import { elevatePoints } from '../elevation.js';
-import { resample, analyzeRoad, segmentSustained, sustainedGrade, hardestClimb, hardestClimbs, grindMask, SAMPLE_STEP } from '../metrics.js';
+import { resample, analyzeRoad, segmentSustained, sustainedGrade, bestSustainedWindow, hardestClimb, hardestClimbs, grindMask, SAMPLE_STEP } from '../metrics.js';
 import { abbrevName } from '../render.js';
+import { buildCsv, csvFilename } from '../csv.js';
 
 // Street-type abbreviation (display only): common type words shorten, but only
 // as whole Title-Case words, so a name that merely starts with those letters
@@ -54,6 +55,28 @@ assert(abbrevName('Martin Luther King Jr Boulevard') === 'Martin Luther King Jr 
 assert(abbrevName('Streetman Road') === 'Streetman Rd', 'abbrev keeps Streetman, shortens Road');
 assert(abbrevName('Roadside Lane') === 'Roadside Ln', 'abbrev keeps Roadside, shortens Lane');
 assert(abbrevName('Franklin Street') === 'Franklin St', 'abbrev St');
+
+// CSV export (csv.js): per-mode columns, endpoints, escaping, filenames.
+const csvRoad = (() => {
+    const s = resample([{ lat: 35, lon: -82 }, { lat: 35.009, lon: -82 }]); // ~1 km due north
+    const { elev, length } = analyzeRoad(s, s.map(p => Math.min(p.d, 500) * 0.10)); // 10% for 500 m, then flat
+    return { id: 'r', name: 'Test Avenue', samples: s, elev, length, value: sustainedGrade(s, elev, 250), climbs: hardestClimbs(s, elev, 3) };
+})();
+const climbCsv = buildCsv({ entries: [{ road: csvRoad, climb: csvRoad.climbs[0] }], rankMode: 'climb', windowM: 250 });
+assert(climbCsv.startsWith('\ufeff'), 'CSV starts with a UTF-8 BOM');
+const cLines = climbCsv.replace(/^\ufeff/, '').trimEnd().split('\r\n');
+assert(cLines[0] === 'rank,name,score,grade_pct,gain_m,length_m,start_lat,start_lon,start_elev_m,end_lat,end_lon,end_elev_m', 'climb CSV header');
+const cCols = cLines[1].split(',');
+assert(cCols[0] === '1' && cCols[1] === 'Test Avenue', `climb CSV rank/name: ${cCols[0]},${cCols[1]}`);
+assert(+cCols[8] < +cCols[11], `climb CSV start elev (${cCols[8]}) below end elev (${cCols[11]}) — bottom to top`);
+const sustCsv = buildCsv({ entries: [{ road: csvRoad, climb: null }], rankMode: 'sustained', windowM: 250 });
+const sLines = sustCsv.replace(/^\ufeff/, '').trimEnd().split('\r\n');
+assert(sLines[0] === 'rank,name,grade_pct,window_m,road_length_m,start_lat,start_lon,start_elev_m,end_lat,end_lon,end_elev_m', 'sustained CSV header');
+assert(sLines[1].split(',')[3] === '250', 'sustained CSV window_m column');
+const commaCsv = buildCsv({ entries: [{ road: { ...csvRoad, name: 'A, B Road' }, climb: csvRoad.climbs[0] }], rankMode: 'climb', windowM: 250 });
+assert(commaCsv.includes('"A, B Road"'), 'CSV quotes a name containing a comma');
+assert(csvFilename('climb', 250, 'Chapel Hill, NC') === 'steepest-climbs-chapel-hill.csv', 'csv filename (climb)');
+assert(csvFilename('sustained', 250, 'Chapel Hill, NC') === 'steepest-sustained-250m-chapel-hill.csv', 'csv filename (sustained)');
 
 const decodeTile = async url => {
     const res = await fetch(url);
@@ -98,6 +121,12 @@ assert(hillSegs[2] < 0.03 && hillSegs[hillSegs.length - 3] > 0.17,
     `flat-then-steep road localizes: start ${(hillSegs[2] * 100).toFixed(1)}%, end ${(hillSegs[hillSegs.length - 3] * 100).toFixed(1)}%`);
 assert(Math.abs(Math.max(...hillSegs) - sustainedGrade(flat, analyzeRoad(flat, hill).elev, 100)) < 1e-12,
     'max of segment values equals road ranking value');
+// The reported best window (for CSV export) matches the ranking value and sits
+// in the steep half of the flat-then-steep road.
+const bw = bestSustainedWindow(flat, analyzeRoad(flat, hill).elev, 100);
+assert(Math.abs(bw.grade - sustainedGrade(flat, analyzeRoad(flat, hill).elev, 100)) < 1e-12,
+    `best window grade equals ranking value (${(bw.grade * 100).toFixed(1)}%)`);
+assert(bw.i < bw.j && flat[bw.i].d >= 490, `best window is in the steep half (starts at ${flat[bw.i].d.toFixed(0)} m)`);
 
 // Length thresholds snap to the nearest whole segment: a 10-segment run
 // summing 249 m counts for a 250 m window (the alternative is a 274 m window

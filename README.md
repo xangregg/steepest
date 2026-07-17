@@ -76,8 +76,10 @@ Code and docs were largely written using Claude Code (Fable 5 and Opus 4.8).
    mid-climb doesn't punch a hole in the highlight (the popup still reports
    the true local grade). The sidebar bar chart shares the color gradient and
    doubles as the ranked list; hover to highlight on the map, click to zoom.
-   Searches are encoded in the URL hash, so results are shareable. Light and
-   dark themes follow the OS.
+   A "Download CSV" button exports the current ranking — including begin/end
+   lat/lon/elevation for each ranked stretch, with columns tailored to the
+   ranking mode. Searches are encoded in the URL hash, so results are
+   shareable. Light and dark themes follow the OS.
 
 ## Code tour
 
@@ -96,6 +98,10 @@ Code and docs were largely written using Claude Code (Fable 5 and Opus 4.8).
   the full rendering model.
 - `cache.js` — IndexedDB persistence of processed roads (versioned; bump
   `VERSION_TAG` when the processed shape or pipeline output changes).
+- `csv.js` — builds the "Download CSV" export of the current ranking; the
+  columns differ by mode (climb rows carry each climb's score/gain and its
+  bottom→top endpoints; sustained rows carry the best-window endpoints), with
+  begin/end lat/lon/elevation for the ranked stretch.
 - `app.js` — UI wiring and orchestration; its header documents the road
   object's field lifecycle. Also exposes the `window.steepest` dev hook for
   live style experiments.

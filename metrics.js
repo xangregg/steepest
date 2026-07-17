@@ -154,6 +154,32 @@ export function sustainedGrade(samples, elev, windowM) {
     return segs ? segs.reduce((m, v) => Math.max(m, v), 0) : null;
 }
 
+// Where the sustained-mode ranking value comes from: the single >= windowM
+// window of highest average grade, as sample endpoints { i, j, grade, span }
+// (or null when the road is shorter than the window). Same minimal-window-per-
+// start scan as segmentSustained, so best.grade equals sustainedGrade.
+export function bestSustainedWindow(samples, elev, windowM) {
+    const n = samples.length;
+    const bound = windowM - SAMPLE_STEP / 2;
+    if (n < 2 || samples[n - 1].d < bound)
+        return null;
+    let best = null;
+    let j = 0;
+    for (let i = 0; i < n - 1; i++) {
+        if (j <= i)
+            j = i + 1;
+        while (j < n - 1 && samples[j].d - samples[i].d < bound)
+            j++;
+        const span = samples[j].d - samples[i].d;
+        if (span < bound)
+            break;
+        const g = Math.abs(elev[j] - elev[i]) / span;
+        if (!best || g > best.grade)
+            best = { i, j, grade: g, span };
+    }
+    return best;
+}
+
 const DIP_ABS = 2;       // m of counter-slope always forgiven (DEM noise)
 const DIP_FRAC = 0.10;   // ... or up to this fraction of the total ascent
 export const GRIND_MIN_GRADE = 0.0225; // a long incline counts from this average grade
