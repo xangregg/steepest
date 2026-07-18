@@ -365,6 +365,7 @@ function colorChunks(road, splitAt) {
 
 const LINE_WEIGHT = 3.5;  // highlight outline weight in px
 const HALO_MARGIN = 9;    // px the hover halo glows beyond each ribbon edge
+const HALO_CAP = 6;       // px the hover halo extends past each road end
 const HALO_OPACITY = 0.35; // translucency of the hover glow over the basemap
 const HALO_MITER_MAX = 1; // cap on the halo's miter widening so hairpins can't spike
 const WIDTH_MIN = 3.5;    // px ribbon width at a run's lowest altitude (zoom-independent)
@@ -563,9 +564,12 @@ function ribbonRing(geom, verts, iStart, iEnd, widthAt, maxScale = Infinity) {
 // constant perpendicular (no miter), so each quad is simple and can't self-cross
 // into a winding-rule hole. Returned as a set of rings for a single nonzero-fill
 // polygon: the second halo pass, which fills the inner-corner holes the offset
-// ring (first pass) leaves while the ring covers the outer corners.
-function segmentQuads(geom, verts, iStart, iEnd, widthAt) {
+// ring (first pass) leaves while the ring covers the outer corners. cap extends
+// the halo that many px past each road end (along the terminal direction) so it
+// wraps a road that ends on a colored segment instead of stopping flush.
+function segmentQuads(geom, verts, iStart, iEnd, widthAt, cap = 0) {
     const rings = [];
+    const un = (x, y) => geom.map.unproject(L.point(x, y), geom.zoom);
     for (let i = iStart; i < iEnd; i++) {
         const p0 = geom.pts[i], p1 = geom.pts[i + 1];
         const dx = p1.x - p0.x, dy = p1.y - p0.y;
@@ -573,11 +577,29 @@ function segmentQuads(geom, verts, iStart, iEnd, widthAt) {
         const px = -dy / len, py = dx / len; // unit perpendicular to the segment
         const w0 = widthAt(verts[i], geom.zoom), w1 = widthAt(verts[i + 1], geom.zoom);
         rings.push([
-            geom.map.unproject(L.point(p0.x + px * w0, p0.y + py * w0), geom.zoom),
-            geom.map.unproject(L.point(p1.x + px * w1, p1.y + py * w1), geom.zoom),
-            geom.map.unproject(L.point(p1.x - px * w1, p1.y - py * w1), geom.zoom),
-            geom.map.unproject(L.point(p0.x - px * w0, p0.y - py * w0), geom.zoom),
+            un(p0.x + px * w0, p0.y + py * w0),
+            un(p1.x + px * w1, p1.y + py * w1),
+            un(p1.x - px * w1, p1.y - py * w1),
+            un(p0.x - px * w0, p0.y - py * w0),
         ]);
+    }
+    // End caps: a rectangle projecting `cap` px straight out beyond each end
+    // vertex, at that end's halo half-width, so the glow wraps the road's tip.
+    if (cap > 0 && iEnd > iStart) {
+        const endCap = (tip, neighbor, w) => {
+            const dx = tip.x - neighbor.x, dy = tip.y - neighbor.y;
+            const len = Math.hypot(dx, dy) || 1;
+            const ox = dx / len * cap, oy = dy / len * cap; // outward, along the road
+            const px = -dy / len * w, py = dx / len * w;    // perpendicular half-width
+            return [
+                un(tip.x + px, tip.y + py),
+                un(tip.x + ox + px, tip.y + oy + py),
+                un(tip.x + ox - px, tip.y + oy - py),
+                un(tip.x - px, tip.y - py),
+            ];
+        };
+        rings.push(endCap(geom.pts[iStart], geom.pts[iStart + 1], widthAt(verts[iStart], geom.zoom)));
+        rings.push(endCap(geom.pts[iEnd], geom.pts[iEnd - 1], widthAt(verts[iEnd], geom.zoom)));
     }
     return rings;
 }
@@ -682,7 +704,7 @@ export function drawRoads(map, ranked, windowM, mode, rankMode = 'sustained') {
         const lastV = dp.verts.length - 1;
         const haloPolys = [
             { seg: false, poly: L.polygon(ribbonRing(geom, dp.verts, 0, lastV, haloWidthAt, HALO_MITER_MAX), haloOpts).addTo(fg) },
-            { seg: true, poly: L.polygon(segmentQuads(geom, dp.verts, 0, lastV, haloWidthAt), haloOpts).addTo(fg) },
+            { seg: true, poly: L.polygon(segmentQuads(geom, dp.verts, 0, lastV, haloWidthAt, HALO_CAP), haloOpts).addTo(fg) },
         ].map(h => ({ ...h, iStart: 0, iEnd: lastV, widthAt: haloWidthAt }));
         const wirePopup = (poly, stretchValue) => {
             // Click handler registered before bindPopup so it runs first and
@@ -790,7 +812,7 @@ export function drawRoads(map, ranked, windowM, mode, rankMode = 'sustained') {
             const geom = roadGeometry(map, e.dp.verts);
             for (const h of e.haloPolys)
                 h.poly.setLatLngs(h.seg
-                    ? segmentQuads(geom, e.dp.verts, h.iStart, h.iEnd, h.widthAt)
+                    ? segmentQuads(geom, e.dp.verts, h.iStart, h.iEnd, h.widthAt, HALO_CAP)
                     : ribbonRing(geom, e.dp.verts, h.iStart, h.iEnd, h.widthAt, HALO_MITER_MAX));
             if (!e.chunks.length)
                 continue;
