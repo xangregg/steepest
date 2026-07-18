@@ -110,7 +110,10 @@ Code and docs were largely written using Claude Code (Fable 5 and Opus 4.8).
   Nominatim/Overpass/tiles (`npm run test:live`), and `test/assert.mjs` is the
   shared assert. `test/render.html` is a visual fixture of synthetic roads
   exercising every rendering rule; `test/cache.html` and `test/cache-unit.html`
-  cover the IndexedDB cache in a real browser.
+  cover the IndexedDB cache in a real browser. `test/make-fixture.mjs` captures a
+  real search into `test/fixtures/<name>.json` (e.g. the committed
+  `brevard.json`), which the app renders offline via `#fixture=<name>` — for
+  checking the UI without Overpass.
 
 ## Running locally
 
@@ -120,6 +123,15 @@ Browsers block ES modules from `file://`, so serve the directory:
 npm start          # python3 -m http.server 8080
 open http://localhost:8080
 ```
+
+### Offline preview
+
+`#fixture=brevard` renders a saved Brevard search
+(`test/fixtures/brevard.json`) with no Nominatim/Overpass/tile-metadata calls —
+useful for demos or UI work when the public APIs are slow, e.g.
+`http://localhost:8080/#fixture=brevard`. Capture more (or refresh this one)
+with `node test/make-fixture.mjs "<place>" <radius_m> <name>` when Overpass is
+responsive.
 
 ## Testing
 
