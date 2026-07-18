@@ -31,7 +31,12 @@ Code and docs were largely written using Claude Code (Fable 5 and Opus 4.8).
    no API key). Elevations get a 3-point moving average to tame noise in the
    digital elevation model (DEM).
 4. **Metrics** — three ranking modes:
-   - **Hardest climb** (default): effort rather than grade — each road's best
+   - **Steepest** (default): the best average grade a road holds over any
+     stretch of the chosen length (default 250 m). The length is a numeric
+     input: 25 m degenerates to "steepest single segment" (noisy — treat with
+     skepticism), longer windows reward genuinely long climbs. Roads shorter
+     than the window are excluded, since the metric is undefined for them.
+   - **Hardest climb**: effort rather than grade — each road's best
      continuous climb (in either travel direction), scored by the **effort
      integral** Σ segment length × grade², which equals gain × average grade
      on a steady climb (the FIETS index from the Dutch cycling magazine
@@ -45,11 +50,6 @@ Code and docs were largely written using Claude Code (Fable 5 and Opus 4.8).
      hills can take two list spots (same-name entries are deduped
      geographically, so parallel carriageways still yield one row per
      physical climb).
-   - **Steepest sustained**: the best average grade a road holds over any
-     stretch of the chosen length (default 250 m). The length is a numeric
-     input: 25 m degenerates to "steepest single segment" (noisy — treat with
-     skepticism), longer windows reward genuinely long climbs. Roads shorter
-     than the window are excluded, since the metric is undefined for them.
    - **Longest incline**: the length of the road's longest long-incline run —
      the same mostly-monotonic, ≥ 2.25 % stretches (of at least the "long
      incline" length) that get the amber underlay described below. Ranks roads
