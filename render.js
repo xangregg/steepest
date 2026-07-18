@@ -10,7 +10,8 @@
 // is painted (short crest gaps
 // close at the palest step). Each segment's color is capped at its own local
 // grade so paint never claims steepness the ground doesn't have. Width flares
-// with altitude above each run's base (thin -> thick = uphill). Ribbon
+// with altitude above each run's base (thin -> thick = uphill), and the flare
+// scales up with zoom so it stays legible when zoomed in. Ribbon
 // geometry densifies through the original OSM vertices wherever the road
 // genuinely curves between the ~25 m samples, so hairpins draw as hairpins,
 // and everything rebuilds on zoom (pixel widths). Long gentle inclines render
@@ -329,9 +330,105 @@ function colorChunks(road, splitAt) {
 }
 
 const LINE_WEIGHT = 3.5;  // highlight outline weight in px
-const WIDTH_MIN = 3.5;    // px ribbon width at a run's lowest altitude
-const WIDTH_PER_M = 0.15; // extra px of width per meter of altitude above the run's base
-const WIDTH_MAX = 14;     // px cap: big-gain runs saturate instead of ballooning over neighbors
+const WIDTH_MIN = 3.5;    // px ribbon width at a run's lowest altitude (zoom-independent)
+// The altitude flare is a fixed pixel amount, so zooming in — where a segment
+// spans far more pixels than its width — makes the thin->thick cue hard to read.
+// So the flare scales with zoom: WIDTH_PER_M and the cap apply as-is at
+// WIDTH_REF_ZOOM, then grow by WIDTH_ZOOM_STEP per level above it, clamped so
+// they neither shrink below the reference nor balloon over neighbours far in.
+let WIDTH_PER_M = 0.15;   // extra px of flare per meter of altitude, at WIDTH_REF_ZOOM
+let WIDTH_MAX = 14;       // px total-width cap, at WIDTH_REF_ZOOM
+let WIDTH_REF_ZOOM = 14;  // below/at this zoom the flare is unchanged from before
+let WIDTH_ZOOM_STEP = 1.3;
+let WIDTH_FACTOR_MIN = 0.25, WIDTH_FACTOR_MAX = 8;
+const flareFactor = (zoom, maxFactor) =>
+    Math.min(maxFactor, Math.max(WIDTH_FACTOR_MIN, WIDTH_ZOOM_STEP ** (zoom - WIDTH_REF_ZOOM)));
+
+// A very curvy road (switchbacks like SF's Lombard) can't wear a big flare: at
+// high zoom a wide ribbon overruns its own hairpins into a blob. Rather than cap
+// the width per vertex (noisy — it spikes and misfires on straight roads),
+// classify each road once by curviness and cap its flare FACTOR low past the
+// threshold; straight and gently-curving roads keep the full factor. Curviness
+// is the MAX turning density over any ~CURVY_WINDOW_M window — not the
+// whole-road average, which dilutes a short crooked block inside a long road
+// below any useful threshold.
+let CURVY_TURN_PER_M = 0.025; // rad/m (windowed) above which a road is "very curvy"
+let CURVY_FLARE_MAX = 2;     // flare-factor ceiling for those roads
+let CURVY_WINDOW_M = 100;    // window the turning density is maximised over
+
+// Curviness: the highest absolute turning per metre over any window of at least
+// CURVY_WINDOW_M along the polyline (rad/m). A switchback block scores high even
+// when the rest of the road is straight; jitter and gentle curves stay low.
+function roadCurviness(verts) {
+    const n = verts.length;
+    if (n < 3)
+        return 0;
+    const cosLat = Math.cos(verts[0].lat * Math.PI / 180);
+    const bearing = i => Math.atan2(verts[i + 1].lat - verts[i].lat,
+        (verts[i + 1].lon - verts[i].lon) * cosLat);
+    const turn = new Array(n).fill(0); // |bend| at each vertex (0 at the ends)
+    const cum = new Array(n).fill(0);  // distance to each vertex (m)
+    let prev = bearing(0);
+    for (let i = 1; i < n; i++) {
+        cum[i] = cum[i - 1] + haversine(verts[i - 1], verts[i]);
+        if (i < n - 1) {
+            const b = bearing(i);
+            let d = b - prev;
+            prev = b;
+            while (d > Math.PI)
+                d -= 2 * Math.PI;
+            while (d < -Math.PI)
+                d += 2 * Math.PI;
+            turn[i] = Math.abs(d);
+        }
+    }
+    // Max turning density over any window of at least CURVY_WINDOW_M: for each
+    // right end, shrink to the shortest window still spanning >= WINDOW, so a
+    // lone sharp corner (a short window) can't score high — only sustained
+    // turning does. A road shorter than the window falls back to its average.
+    let lo = 0, sum = 0, best = 0;
+    for (let hi = 1; hi < n; hi++) {
+        sum += turn[hi];
+        while (cum[hi] - cum[lo + 1] >= CURVY_WINDOW_M) {
+            sum -= turn[lo + 1];
+            lo++;
+        }
+        if (cum[hi] - cum[lo] >= CURVY_WINDOW_M)
+            best = Math.max(best, sum / (cum[hi] - cum[lo]));
+    }
+    if (best === 0) {
+        let total = 0;
+        for (let i = 1; i < n - 1; i++)
+            total += turn[i];
+        best = cum[n - 1] > 0 ? total / cum[n - 1] : 0;
+    }
+    return best;
+}
+
+// Live tuning of the altitude flare (see the window.steepest dev hook).
+export function setWidthStyle({ perM, max, refZoom, zoomStep, factorMin, factorMax, curvyMax, curvyTurn, curvyWin } = {}) {
+    if (perM !== undefined)
+        WIDTH_PER_M = perM;
+    if (max !== undefined)
+        WIDTH_MAX = max;
+    if (refZoom !== undefined)
+        WIDTH_REF_ZOOM = refZoom;
+    if (zoomStep !== undefined)
+        WIDTH_ZOOM_STEP = zoomStep;
+    if (factorMin !== undefined)
+        WIDTH_FACTOR_MIN = factorMin;
+    if (factorMax !== undefined)
+        WIDTH_FACTOR_MAX = factorMax;
+    if (curvyMax !== undefined)
+        CURVY_FLARE_MAX = curvyMax;
+    if (curvyTurn !== undefined)
+        CURVY_TURN_PER_M = curvyTurn;
+    if (curvyWin !== undefined)
+        CURVY_WINDOW_M = curvyWin;
+    // Return the current settings so the dev-console hook echoes them (instead
+    // of undefined) and confirms the change landed.
+    return { perM: WIDTH_PER_M, max: WIDTH_MAX, refZoom: WIDTH_REF_ZOOM, zoomStep: WIDTH_ZOOM_STEP, factorMin: WIDTH_FACTOR_MIN, factorMax: WIDTH_FACTOR_MAX, curvyMax: CURVY_FLARE_MAX, curvyTurn: CURVY_TURN_PER_M, curvyWin: CURVY_WINDOW_M };
+}
 const DENSIFY_RATIO = 1.02; // densify drawing where path between samples exceeds the chord by this
 
 // Drawing path: the ~25 m sample vertices plus, wherever the true path between
@@ -411,7 +508,7 @@ function ribbonRing(geom, verts, iStart, iEnd, widthAt) {
     const left = [], right = [];
     for (let i = iStart; i <= iEnd; i++) {
         const p = geom.pts[i], { nx, ny, scale } = geom.normals[i];
-        const w = widthAt(verts[i]) * scale;
+        const w = widthAt(verts[i], geom.zoom) * scale;
         left.push(geom.map.unproject(L.point(p.x + nx * w, p.y + ny * w), geom.zoom));
         right.unshift(geom.map.unproject(L.point(p.x - nx * w, p.y - ny * w), geom.zoom));
     }
@@ -470,15 +567,24 @@ export function drawRoads(map, ranked, windowM, mode, rankMode = 'sustained') {
         let clickK = null; // set by a map click just before the bound popup opens
         const geom = roadGeometry(map, dp.verts);
         const lastK = road.samples.length - 1;
-        // Per-sample half-widths interpolate across densified vertices.
-        const widthFor = halfAt => v => halfAt(v.k) * (1 - v.f) + halfAt(Math.min(v.k + 1, lastK)) * v.f;
-        // A run's width: WIDTH_MIN at its lowest altitude, +WIDTH_PER_M per
-        // meter above it, capped — so thin -> thick reads as uphill.
+        // Very curvy roads cap their flare factor (computed once from the full
+        // draw-path geometry) so a switchback can't balloon into a blob.
+        road.curviness ??= roadCurviness(dp.verts);
+        const roadMax = road.curviness > CURVY_TURN_PER_M ? CURVY_FLARE_MAX : WIDTH_FACTOR_MAX;
+        // A run's half-width at each vertex: WIDTH_MIN at its lowest altitude,
+        // plus flare growing with altitude above that base and with zoom (see
+        // flareFactor) — thin -> thick reads as uphill. Per-sample values
+        // interpolate across the densified draw-path vertices.
         const runWidthAt = (kStart, kEnd) => {
             let base = Infinity;
             for (let k = kStart; k <= kEnd; k++)
                 base = Math.min(base, road.elev[k]);
-            return widthFor(k => Math.min(WIDTH_MIN + WIDTH_PER_M * (road.elev[k] - base), WIDTH_MAX) / 2);
+            const halfAt = (k, f) =>
+                (WIDTH_MIN + Math.min(WIDTH_PER_M * f * (road.elev[k] - base), (WIDTH_MAX - WIDTH_MIN) * f)) / 2;
+            return (v, zoom) => {
+                const f = flareFactor(zoom, roadMax);
+                return halfAt(v.k, f) * (1 - v.f) + halfAt(Math.min(v.k + 1, lastK), f) * v.f;
+            };
         };
         const wirePopup = (poly, stretchValue) => {
             // Click handler registered before bindPopup so it runs first and

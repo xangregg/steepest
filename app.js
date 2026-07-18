@@ -20,7 +20,7 @@
 import { parseLatLon, geocode, fetchRoads, prepareRoads } from './roads.js';
 import { elevatePoints } from './elevation.js';
 import { resample, analyzeRoad, segmentSustained, hardestClimbs, grindMask, SAMPLE_STEP } from './metrics.js';
-import { initMap, drawRoads, renderList, setGrindStyle, setRampStyle } from './render.js';
+import { initMap, drawRoads, renderList, setGrindStyle, setRampStyle, setWidthStyle } from './render.js';
 import { searchKey, cacheGet, cachePut } from './cache.js';
 import { buildCsv, csvFilename } from './csv.js';
 
@@ -335,6 +335,8 @@ darkQuery.addEventListener('change', () => {
 //   steepest.grind({ dark: '#5f6a78' })
 //   steepest.ramp({ light: { mid: '#ff0000', hi: '#330000' } })
 //   steepest.ramp({ hue: 'violet', dark: { mid: '#9a6cff' } })
+//   steepest.width({ refZoom: 14, zoomStep: 1.3, factorMin: 0.25, factorMax: 8, curvyMax: 2, curvyTurn: 0.025 })
+//   steepest.curviness()  // table of roads by curviness + which are "curvy"
 window.steepest = {
     grind(opts) {
         setGrindStyle(opts);
@@ -343,6 +345,22 @@ window.steepest = {
     ramp(opts) {
         setRampStyle(opts);
         render();
+    },
+    width(opts) {
+        const cfg = setWidthStyle(opts);
+        render();
+        return cfg; // echo the current settings to the console
+    },
+    // Diagnostic: list the loaded roads by curviness and whether the current
+    // curvyTurn classifies them "curvy" (so the flare-factor cap applies).
+    curviness() {
+        const { curvyTurn } = setWidthStyle();
+        const rows = (state?.roads ?? [])
+            .filter(r => r.curviness !== undefined)
+            .map(r => ({ name: r.name, curviness: +r.curviness.toFixed(4), curvy: r.curviness > curvyTurn }))
+            .sort((a, b) => b.curviness - a.curviness);
+        console.table(rows.slice(0, 25));
+        return `${rows.filter(r => r.curvy).length} of ${rows.length} roads classified curvy at curvyTurn=${curvyTurn}`;
     },
 };
 

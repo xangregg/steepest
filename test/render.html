@@ -75,6 +75,14 @@
             const t = i / 119;
             return { lat: 35.2315 + t * 0.0025, lon: -82.7135 + 0.0006 * Math.sin(t * Math.PI * 12) };
         }), d => d * 0.05),
+        // Same switchbacks with mild per-vertex digitization jitter (as real OSM
+        // traces have): its high mean curvature must classify it "very curvy" so
+        // its flare factor is capped and the ribbon can't blob at high zoom.
+        mkRoadPts('Lombard', Array.from({ length: 120 }, (_, i) => {
+            const t = i / 119;
+            const jit = s => 0.000012 * Math.sin(i * 12.9898 + s); // deterministic pseudo-noise
+            return { lat: 35.2315 + t * 0.0025 + jit(1), lon: -82.7105 + 0.0006 * Math.sin(t * Math.PI * 12) + jit(4) };
+        }), d => d * 0.05),
     ].sort((a, b) => b.value - a.value);
     for (const r of roads) {
         if (!r.climbs.length)
