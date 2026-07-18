@@ -220,17 +220,22 @@ const US_STATES = {
     Vermont: 'VT', Virginia: 'VA', Washington: 'WA', 'West Virginia': 'WV',
     Wisconsin: 'WI', Wyoming: 'WY', 'District of Columbia': 'DC',
 };
-// Shorten a comma-separated Nominatim label: "United States" -> US, state names
-// -> postal codes, and County/Parish/Township -> Co/Par/Twp within a part.
+// Shorten a comma-separated Nominatim label for display: drop county-equivalent
+// admin parts entirely (County/Parish/Borough/Census Area/Municipality) — but
+// never the first part, which is the place itself (it may legitimately be a
+// county) — and abbreviate US states to postal codes and "United States" to US.
+const COUNTY_RE = /\b(County|Parish|Borough|Census Area|Municipality)\b/;
 export function shortLabel(label) {
-    return label.split(',').map(s => {
-        const p = s.trim();
-        if (p === 'United States' || p === 'United States of America')
-            return 'US';
-        if (US_STATES[p])
-            return US_STATES[p];
-        return p.replace(/\bCounty\b/, 'Co').replace(/\bParish\b/, 'Par').replace(/\bTownship\b/, 'Twp');
-    }).join(', ');
+    return label.split(',').map(s => s.trim())
+        .filter((p, i) => i === 0 || !COUNTY_RE.test(p))
+        .map((p, i) => {
+            if (i === 0)
+                return p;
+            if (p === 'United States' || p === 'United States of America')
+                return 'US';
+            return US_STATES[p] ?? p;
+        })
+        .join(', ');
 }
 
 // segK: index of the ~25 m sample segment nearest the click, when the popup

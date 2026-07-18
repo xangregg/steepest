@@ -47,11 +47,14 @@ import { resample, analyzeRoad, segmentSustained, sustainedGrade, bestSustainedW
 import { abbrevName, shortLabel } from '../render.js';
 import { buildCsv, csvFilename } from '../csv.js';
 
-// Place-label shortening for the list sub-line.
-assert(shortLabel('Brevard, Transylvania County, North Carolina, United States') === 'Brevard, Transylvania Co, NC, US',
+// Place-label shortening for the list sub-line: drop county-equivalent parts,
+// abbreviate state + country.
+assert(shortLabel('Brevard, Transylvania County, North Carolina, United States') === 'Brevard, NC, US',
     `shortLabel: ${shortLabel('Brevard, Transylvania County, North Carolina, United States')}`);
-assert(shortLabel('Pittsburgh, Allegheny County, Pennsylvania, United States') === 'Pittsburgh, Allegheny Co, PA, US', 'shortLabel PA');
-assert(shortLabel('New Orleans, Orleans Parish, Louisiana, United States') === 'New Orleans, Orleans Par, LA, US', 'shortLabel Parish/LA');
+assert(shortLabel('Pittsburgh, Allegheny County, Pennsylvania, United States') === 'Pittsburgh, PA, US', 'shortLabel drops County (PA)');
+assert(shortLabel('New Orleans, Orleans Parish, Louisiana, United States') === 'New Orleans, LA, US', 'shortLabel drops Parish (LA)');
+assert(shortLabel('Utqiagvik, North Slope Borough, Alaska, United States') === 'Utqiagvik, AK, US', 'shortLabel drops Borough (AK)');
+assert(shortLabel('Transylvania County, North Carolina, United States') === 'Transylvania County, NC, US', 'shortLabel keeps a county as the place');
 assert(shortLabel('Toronto, Ontario, Canada') === 'Toronto, Ontario, Canada', 'shortLabel leaves non-US parts alone');
 
 // Street-type abbreviation (display only): common type words shorten, but only
