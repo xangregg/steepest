@@ -34,7 +34,7 @@ export const GRADE_MAX = 0.25; // ramp bottoms out (deepest color) at a 25% grad
 // basemap. The dark-mode lo isn't as dark as the light-mode hi, so the gentlest
 // painted grade still separates from the near-black basemap.
 export const RAMPS = {
-    light: { lo: '#fbd3d0', mid: '#dd2c22', hi: '#3f0b09' },
+    light: { lo: '#fbd3d0', mid: '#dd2c22', hi: '#160302' },
     dark: { lo: '#5a1512', mid: '#e5352a', hi: '#fbd3d0' },
 };
 
@@ -43,7 +43,7 @@ export const RAMPS = {
 // the gray basemap (cyan sank into it), stays well away from the climb reds,
 // and the hue pair survives red-green color-vision deficiency.
 export const RAMPS_ALT = {
-    light: { lo: '#e6dcf8', mid: '#7c46dd', hi: '#241541' },
+    light: { lo: '#e6dcf8', mid: '#7c46dd', hi: '#0d0716' },
     dark: { lo: '#2e1a52', mid: '#8a55e8', hi: '#e6dcf8' },
 };
 
