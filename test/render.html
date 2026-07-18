@@ -84,22 +84,30 @@
             return { lat: 35.2315 + t * 0.0025 + jit(1), lon: -82.7105 + 0.0006 * Math.sin(t * Math.PI * 12) + jit(4) };
         }), d => d * 0.05),
     ].sort((a, b) => b.value - a.value);
+    // Climb mode by default; #mode=sustained exercises the sustained red/violet
+    // split (the top-N roads red, every other steep road violet).
+    const p = new URLSearchParams(location.hash.slice(1));
+    const rankMode = p.get('mode') === 'sustained' ? 'sustained' : 'climb';
     for (const r of roads) {
-        if (!r.climbs.length)
-            continue;
-        const paint = Float64Array.from(r.segs);
-        for (const c of r.climbs)
-            for (let k = c.i; k < c.j; k++)
-                paint[k] = Math.max(paint[k], c.grade);
-        r.paint = paint;
+        r.paint = null;
+        // Climb mode floors each climb's extent at its average grade for
+        // continuity; sustained mode colors the raw per-segment grade.
+        if (rankMode === 'climb' && r.climbs.length) {
+            const paint = Float64Array.from(r.segs);
+            for (const c of r.climbs)
+                for (let k = c.i; k < c.j; k++)
+                    paint[k] = Math.max(paint[k], c.grade);
+            r.paint = paint;
+        }
     }
+    if (rankMode === 'sustained')
+        [...roads].sort((a, b) => b.value - a.value).slice(0, 6).forEach(r => r.listed = true);
 
     const { map, updateLegend } = initMap(document.getElementById('map'), 'light');
-    updateLegend('light', 'climb');
-    const layer = drawRoads(map, roads, 100, 'light', 'climb');
+    updateLegend('light', rankMode, 6);
+    const layer = drawRoads(map, roads, 100, 'light', rankMode);
     map.fitBounds([[35.229, -82.742], [35.240, -82.714]]);
     // Optional close-up for seam inspection: #z=17&lat=35.2335&lon=-82.736
-    const p = new URLSearchParams(location.hash.slice(1));
     if (p.get('z'))
         map.setView([+p.get('lat'), +p.get('lon')], +p.get('z'));
     // Pre-highlight one road so a screenshot shows the hover state: the climb

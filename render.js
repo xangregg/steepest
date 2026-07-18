@@ -168,13 +168,11 @@ export function initMap(el, mode) {
         // Below the ticks and swatch-sized, so the % scale clearly doesn't
         // apply to the categorical grind color.
         const grindRow = `<div class="legend-row legend-grind"><div class="legend-swatch" style="background:${GRIND_COLORS[m]};opacity:${GRIND_OPACITY}"></div><span class="legend-label">long incline (≥${+(GRIND_MIN_GRADE * 100).toFixed(2)}%)</span></div>`;
-        legendDiv.innerHTML = rankMode === 'climb'
-            ? `<div class="legend-title">grade</div>
-               <div class="legend-row">${barDiv(rampCss(RAMPS[m]))}<span class="legend-label">top ${topN} climbs</span></div>
+        // Both modes reserve red for the listed roads and violet for the rest.
+        const listLabel = rankMode === 'climb' ? `top ${topN} climbs` : `top ${topN} roads`;
+        legendDiv.innerHTML = `<div class="legend-title">grade</div>
+               <div class="legend-row">${barDiv(rampCss(RAMPS[m]))}<span class="legend-label">${listLabel}</span></div>
                <div class="legend-row">${barDiv(rampCss(RAMPS_ALT[m]))}<span class="legend-label">other steep</span></div>
-               ${ticks}${grindRow}`
-            : `<div class="legend-title">grade</div>
-               <div class="legend-row">${barDiv(rampCss(RAMPS[m]))}<span class="legend-label">steepness</span></div>
                ${ticks}${grindRow}`;
     };
     updateLegend(mode);
@@ -541,12 +539,12 @@ export function drawRoads(map, ranked, windowM, mode, rankMode = 'sustained') {
             return;
         e.skeleton.setStyle({ opacity: on ? 0.55 : 0 });
         const emphasizeClimb = isClimbMode && road.topExtents?.length;
-        for (const { poly, inClimb, isGrind } of e.chunks) {
+        for (const { poly, prominent, isGrind } of e.chunks) {
             if (isGrind) {
                 // Hover fattens the outline; the pane keeps it translucent.
                 poly.setStyle({ opacity: on ? 1 : 0, fillOpacity: 1 });
             }
-            else if (emphasizeClimb && !inClimb) {
+            else if (emphasizeClimb && !prominent) {
                 poly.setStyle({ opacity: 0, fillOpacity: on ? 0.45 : 1 });
             }
             else {
@@ -633,7 +631,7 @@ export function drawRoads(map, ranked, windowM, mode, rankMode = 'sustained') {
                     wirePopup(hit, best);
                     poly.addTo(fg);
                     hit.addTo(fg);
-                    chunks.push({ poly, hit, inClimb: false, isGrind: true, iStart, iEnd, widthAt });
+                    chunks.push({ poly, hit, prominent: false, isGrind: true, iStart, iEnd, widthAt });
                     a = -1;
                 }
             }
@@ -643,24 +641,26 @@ export function drawRoads(map, ranked, windowM, mode, rankMode = 'sustained') {
         // at WIDTH_MIN at its own lowest altitude, so thin -> thick = uphill.
         const runs = [];
         for (const chunk of colorChunks(road, split)) {
-            // Red is reserved for the listed (top-N) roads' climbs, so map
-            // color mirrors the ranking; other roads' climbs stay violet.
-            const inClimb = !!(isClimbMode &&
-                road.topExtents?.some(([ci, cj]) => chunk.kStart >= ci && chunk.kStart < cj));
-            const hue = inClimb ? 'climb' : 'other';
+            // Red is reserved for the listed (top-N) roads — climb mode marks
+            // the listed climb extents, sustained mode the whole listed road —
+            // so map color mirrors the ranking; everything else steep is violet.
+            const prominent = isClimbMode
+                ? !!road.topExtents?.some(([ci, cj]) => chunk.kStart >= ci && chunk.kStart < cj)
+                : !!road.listed;
+            const hue = prominent ? 'climb' : 'other';
             const prev = runs[runs.length - 1];
             if (prev && prev.hue === hue && prev.kEnd === chunk.kStart) {
                 prev.kEnd = chunk.kEnd;
                 prev.items.push(chunk);
             }
             else {
-                runs.push({ hue, inClimb, kStart: chunk.kStart, kEnd: chunk.kEnd, items: [chunk] });
+                runs.push({ hue, prominent, kStart: chunk.kStart, kEnd: chunk.kEnd, items: [chunk] });
             }
         }
         for (const run of runs) {
             const widthAt = runWidthAt(run.kStart, run.kEnd);
             for (const chunk of run.items) {
-                const c = (isClimbMode && !run.inClimb ? colorAlt : color)(chunk.paint);
+                const c = (run.prominent ? color : colorAlt)(chunk.paint);
                 const iStart = dp.sampleIdx[chunk.kStart], iEnd = dp.sampleIdx[chunk.kEnd];
                 const poly = L.polygon(ribbonRing(geom, dp.verts, iStart, iEnd, widthAt), {
                     // Opaque fill: semi-transparent neighbors blend with the
@@ -671,7 +671,7 @@ export function drawRoads(map, ranked, windowM, mode, rankMode = 'sustained') {
                 });
                 wirePopup(poly, chunk.value);
                 poly.addTo(fg);
-                chunks.push({ poly, inClimb: run.inClimb, kStart: chunk.kStart, kEnd: chunk.kEnd, paintVal: chunk.paint, iStart, iEnd, widthAt });
+                chunks.push({ poly, prominent: run.prominent, kStart: chunk.kStart, kEnd: chunk.kEnd, paintVal: chunk.paint, iStart, iEnd, widthAt });
                 if (!steepest || chunk.paint > steepest.chunkPaint) {
                     steepest = poly;
                     steepest.chunkPaint = chunk.paint;

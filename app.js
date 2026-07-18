@@ -170,6 +170,7 @@ function render() {
             r.value = r.segs ? r.segs.reduce((m, v) => Math.max(m, v), 0) : null;
             r.paint = null;
             r.topExtents = null;
+            r.listed = false; // set on sustained-mode roads that make the list (red vs violet)
             return r;
         })
         .filter(r => r.value != null); // shorter-than-window roads have no value
@@ -221,7 +222,9 @@ function render() {
     else {
         ranked.sort((a, b) => b.value - a.value);
         // The list dedupes by name (a road split into disjoint pieces keeps
-        // only its steepest piece); the map still shows every piece.
+        // only its steepest piece); the map still shows every piece. Listed
+        // roads wear red on the map, every other steep road violet — like
+        // climb mode, so the map mirrors the city-wide ranking in both modes.
         entries = [];
         const seen = new Set();
         for (const r of ranked) {
@@ -229,6 +232,7 @@ function render() {
                 continue;
             seen.add(r.name);
             entries.push({ road: r, climb: null });
+            r.listed = true;
             if (entries.length >= listMax)
                 break;
         }
