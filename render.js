@@ -367,7 +367,9 @@ const LINE_WEIGHT = 3.5;  // highlight outline weight in px
 const HALO_MARGIN = 9;    // px the hover halo glows beyond each ribbon edge
 const HALO_CAP = 6;       // px the hover halo extends past each road end
 const HALO_OPACITY = 0.35; // translucency of the hover glow over the basemap
-const HALO_MITER_MAX = 1; // cap on the halo's miter widening so hairpins can't spike
+const HALO_MITER_MAX = 1;   // cap on the halo's miter widening so hairpins can't spike
+const RIBBON_MITER_MAX = 2; // same cap for the ribbon/underlay, looser so gentle
+                            // bends keep parallel edges but hairpins can't spike
 const WIDTH_MIN = 3.5;    // px ribbon width at a run's lowest altitude (zoom-independent)
 // The altitude flare is a fixed pixel amount, so zooming in — where a segment
 // spans far more pixels than its width — makes the thin->thick cue hard to read.
@@ -737,7 +739,7 @@ export function drawRoads(map, ranked, windowM, mode, rankMode = 'sustained') {
                     const c = GRIND_COLORS[mode];
                     const widthAt = runWidthAt(kStart, kEnd);
                     const iStart = dp.sampleIdx[kStart], iEnd = dp.sampleIdx[kEnd];
-                    const ring = ribbonRing(geom, dp.verts, iStart, iEnd, widthAt);
+                    const ring = ribbonRing(geom, dp.verts, iStart, iEnd, widthAt, RIBBON_MITER_MAX);
                     const poly = L.polygon(ring, {
                         pane: 'inclines', renderer: map._inclineRenderer,
                         interactive: false,
@@ -784,7 +786,7 @@ export function drawRoads(map, ranked, windowM, mode, rankMode = 'sustained') {
             for (const chunk of run.items) {
                 const c = (run.prominent ? color : colorAlt)(chunk.paint);
                 const iStart = dp.sampleIdx[chunk.kStart], iEnd = dp.sampleIdx[chunk.kEnd];
-                const poly = L.polygon(ribbonRing(geom, dp.verts, iStart, iEnd, widthAt), {
+                const poly = L.polygon(ribbonRing(geom, dp.verts, iStart, iEnd, widthAt, RIBBON_MITER_MAX), {
                     // Opaque fill: semi-transparent neighbors blend with the
                     // basemap at antialiased seam edges and show hairlines.
                     fillColor: c, fillOpacity: 1,
@@ -817,7 +819,7 @@ export function drawRoads(map, ranked, windowM, mode, rankMode = 'sustained') {
             if (!e.chunks.length)
                 continue;
             for (const c of e.chunks) {
-                const ring = ribbonRing(geom, e.dp.verts, c.iStart, c.iEnd, c.widthAt);
+                const ring = ribbonRing(geom, e.dp.verts, c.iStart, c.iEnd, c.widthAt, RIBBON_MITER_MAX);
                 c.poly.setLatLngs(ring);
                 c.hit?.setLatLngs(ring);
             }
