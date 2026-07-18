@@ -5,7 +5,15 @@
     <title>segment-coloring render test</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
     <link rel="stylesheet" href="../style.css">
-    <style>main { height: 90vh; } body > p { margin: 8px 14px; font: 14px system-ui, sans-serif; }</style>
+    <!-- The app moved to a two-panel layout (#map-panel/#rank-panel); this
+         fixture keeps its own simple map + sidebar, styling the sidebar here so
+         it doesn't depend on the app's panel CSS. -->
+    <style>
+        main { height: 90vh; }
+        #map { flex: 1; }
+        #sidebar { width: 380px; overflow-y: auto; padding: 12px; border-left: 1px solid var(--hairline); background: var(--surface); }
+        body > p { margin: 8px 14px; font: 14px system-ui, sans-serif; }
+    </style>
 </head>
 <body>
 <p>Synthetic roads, sustained 100 m, with climb paint applied: each should fade

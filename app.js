@@ -162,7 +162,7 @@ function render() {
         return;
     const windowM = Math.max(SAMPLE_STEP, +byId('window').value || 250);
     const longLen = Math.max(SAMPLE_STEP * 2, +byId('longlen').value || 800);
-    const listMax = Math.min(100, Math.max(1, +byId('listmax').value || 25));
+    const listMax = Math.min(100, Math.max(1, +byId('listmax').value || 15));
     const rankMode = byId('rankmode').value;
     let ranked = state.roads
         .map(r => {
