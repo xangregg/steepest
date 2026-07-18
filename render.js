@@ -384,7 +384,11 @@ const flareFactor = (zoom, maxFactor) =>
 // whole-road average, which dilutes a short crooked block inside a long road
 // below any useful threshold.
 let CURVY_TURN_PER_M = 0.025; // rad/m (windowed) above which a road is "very curvy"
-let CURVY_FLARE_MAX = 2;     // flare-factor ceiling for those roads
+// Flare-factor ceiling for curvy roads. At 1 their flare never grows past the
+// reference zoom — the zoom amplification is what overruns their bends into
+// broken/blobby joins, even for moderately curvy roads like Brevard's
+// Pickleseimer Mill Rd; the base thin->thick altitude cue still shows.
+let CURVY_FLARE_MAX = 1;
 let CURVY_WINDOW_M = 100;    // window the turning density is maximised over
 
 // Curviness: the highest absolute turning per metre over any window of at least

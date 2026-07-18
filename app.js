@@ -339,7 +339,7 @@ darkQuery.addEventListener('change', () => {
 //   steepest.grind({ dark: '#5f6a78' })
 //   steepest.ramp({ light: { mid: '#ff0000', hi: '#330000' } })
 //   steepest.ramp({ hue: 'violet', dark: { mid: '#9a6cff' } })
-//   steepest.width({ refZoom: 14, zoomStep: 1.3, factorMin: 0.25, factorMax: 8, curvyMax: 2, curvyTurn: 0.025 })
+//   steepest.width({ refZoom: 14, zoomStep: 1.3, factorMin: 0.25, factorMax: 8, curvyMax: 1, curvyTurn: 0.025 })
 //   steepest.curviness()  // table of roads by curviness + which are "curvy"
 window.steepest = {
     grind(opts) {
@@ -381,6 +381,9 @@ if (params.get('fixture')) {
             state = { roads: f.roads, center: f.center, radiusM: f.radiusM, label: f.center.label, cachedAt: null };
             map.fitBounds(L.latLng(f.center.lat, f.center.lon).toBounds(f.radiusM * 2));
             render();
+            // Optional close-up for inspecting a spot: #fixture=brevard&z=16&lat=..&lon=..
+            if (params.get('z'))
+                map.setView([+params.get('lat'), +params.get('lon')], +params.get('z'));
         })
         .catch(err => status(err.message, { error: true }));
 }
