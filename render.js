@@ -610,7 +610,7 @@ export function drawRoads(map, ranked, windowM, mode, rankMode = 'sustained') {
     const lines = new Map(); // road -> { skeleton, haloPolys, chunks:[{poly, ...}], steepest, dp }
     const isClimbMode = rankMode === 'climb';
     // Hover glow color: a dark casing on the light basemap, a light one on dark.
-    const haloColor = mode === 'dark' ? '#f5f5f5' : '#009966';
+    const haloColor = mode === 'dark' ? '#40d4a6' : '#009966';
 
     function setHighlight(road, on) {
         const e = lines.get(road);
