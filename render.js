@@ -364,6 +364,9 @@ function colorChunks(road, splitAt) {
 }
 
 const LINE_WEIGHT = 3.5;  // highlight outline weight in px
+const HALO_MARGIN = 9;    // px the hover halo glows beyond each ribbon edge
+const HALO_OPACITY = 0.35; // translucency of the hover glow over the basemap
+const HALO_MITER_MAX = 1; // cap on the halo's miter widening so hairpins can't spike
 const WIDTH_MIN = 3.5;    // px ribbon width at a run's lowest altitude (zoom-independent)
 // The altitude flare is a fixed pixel amount, so zooming in — where a segment
 // spans far more pixels than its width — makes the thin->thick cue hard to read.
@@ -542,15 +545,41 @@ function roadGeometry(map, samples) {
 
 // Ribbon ring over draw-path vertices [iStart..iEnd]; widthAt(vertex) gives
 // the half-width in px, so width can vary along the road (altitude flare).
-function ribbonRing(geom, verts, iStart, iEnd, widthAt) {
+// maxScale caps the miter widening at sharp turns: the ribbon wants full miter
+// so its edges stay parallel through a bend, but the halo passes maxScale ~1 so
+// hairpins can't overshoot into spikes (it's just a glow, not data).
+function ribbonRing(geom, verts, iStart, iEnd, widthAt, maxScale = Infinity) {
     const left = [], right = [];
     for (let i = iStart; i <= iEnd; i++) {
         const p = geom.pts[i], { nx, ny, scale } = geom.normals[i];
-        const w = widthAt(verts[i], geom.zoom) * scale;
+        const w = widthAt(verts[i], geom.zoom) * Math.min(scale, maxScale);
         left.push(geom.map.unproject(L.point(p.x + nx * w, p.y + ny * w), geom.zoom));
         right.unshift(geom.map.unproject(L.point(p.x - nx * w, p.y - ny * w), geom.zoom));
     }
     return left.concat(right);
+}
+
+// One trapezoid per straight segment, thickened using that segment's own
+// constant perpendicular (no miter), so each quad is simple and can't self-cross
+// into a winding-rule hole. Returned as a set of rings for a single nonzero-fill
+// polygon: the second halo pass, which fills the inner-corner holes the offset
+// ring (first pass) leaves while the ring covers the outer corners.
+function segmentQuads(geom, verts, iStart, iEnd, widthAt) {
+    const rings = [];
+    for (let i = iStart; i < iEnd; i++) {
+        const p0 = geom.pts[i], p1 = geom.pts[i + 1];
+        const dx = p1.x - p0.x, dy = p1.y - p0.y;
+        const len = Math.hypot(dx, dy) || 1;
+        const px = -dy / len, py = dx / len; // unit perpendicular to the segment
+        const w0 = widthAt(verts[i], geom.zoom), w1 = widthAt(verts[i + 1], geom.zoom);
+        rings.push([
+            geom.map.unproject(L.point(p0.x + px * w0, p0.y + py * w0), geom.zoom),
+            geom.map.unproject(L.point(p1.x + px * w1, p1.y + py * w1), geom.zoom),
+            geom.map.unproject(L.point(p1.x - px * w1, p1.y - py * w1), geom.zoom),
+            geom.map.unproject(L.point(p0.x - px * w0, p0.y - py * w0), geom.zoom),
+        ]);
+    }
+    return rings;
 }
 
 // Draw ranked roads (already sorted steepest-first); shallower roads are drawn
@@ -569,15 +598,28 @@ export function drawRoads(map, ranked, windowM, mode, rankMode = 'sustained') {
         map.createPane('inclines').style.zIndex = 399;
     map.getPane('inclines').style.opacity = GRIND_OPACITY;
     map._inclineRenderer ??= L.canvas({ pane: 'inclines', padding: 0.3 });
+    // Hover halo shares that trick: opaque pieces on their own pane, faded once
+    // by the pane so overlaps between pieces don't double-darken and a curvy
+    // run's self-overlap can't cancel to a hole (as a single translucent ring
+    // would). Beneath the ribbons; per-road show/hide is per-piece fillOpacity.
+    if (!map.getPane('halo'))
+        map.createPane('halo').style.zIndex = 398;
+    map.getPane('halo').style.opacity = HALO_OPACITY;
+    map._haloRenderer ??= L.canvas({ pane: 'halo', padding: 0.3 });
     const group = L.layerGroup().addTo(map);
-    const lines = new Map(); // road -> { skeleton, chunks:[{poly, ...}], steepest, dp }
+    const lines = new Map(); // road -> { skeleton, haloPolys, chunks:[{poly, ...}], steepest, dp }
     const isClimbMode = rankMode === 'climb';
+    // Hover glow color: a dark casing on the light basemap, a light one on dark.
+    const haloColor = mode === 'dark' ? '#f5f5f5' : '#009966';
 
     function setHighlight(road, on) {
         const e = lines.get(road);
         if (!e)
             return;
         e.skeleton.setStyle({ opacity: on ? 0.55 : 0 });
+        // Show/hide the road's halo pieces; the pane supplies the fade.
+        for (const h of e.haloPolys)
+            h.poly.setStyle({ fillOpacity: on ? 1 : 0 });
         const emphasizeClimb = isClimbMode && road.topExtents?.length;
         for (const { poly, prominent, isGrind } of e.chunks) {
             if (isGrind) {
@@ -624,6 +666,24 @@ export function drawRoads(map, ranked, windowM, mode, rankMode = 'sustained') {
                 return halfAt(v.k, f) * (1 - v.f) + halfAt(Math.min(v.k + 1, lastK), f) * v.f;
             };
         };
+        // Hover halo: a thick gray glow tracing the WHOLE road — flats included,
+        // so the full extent lights up, not just the painted steep chunks. Two
+        // opaque passes on the faded halo pane: a miter offset ring (pass 1)
+        // covers the outer corners, per-segment trapezoids (pass 2) fill the
+        // inner corners, so a curvy road can't leave winding-rule holes. Width
+        // follows the road's altitude flare from its global-min base, plus
+        // HALO_MARGIN; both passes toggle on hover.
+        const fullWidthAt = runWidthAt(0, lastK);
+        const haloWidthAt = (v, zoom) => fullWidthAt(v, zoom) + HALO_MARGIN;
+        const haloOpts = {
+            pane: 'halo', renderer: map._haloRenderer, interactive: false,
+            stroke: false, fillColor: haloColor, fillOpacity: 0, fillRule: 'nonzero',
+        };
+        const lastV = dp.verts.length - 1;
+        const haloPolys = [
+            { seg: false, poly: L.polygon(ribbonRing(geom, dp.verts, 0, lastV, haloWidthAt, HALO_MITER_MAX), haloOpts).addTo(fg) },
+            { seg: true, poly: L.polygon(segmentQuads(geom, dp.verts, 0, lastV, haloWidthAt), haloOpts).addTo(fg) },
+        ].map(h => ({ ...h, iStart: 0, iEnd: lastV, widthAt: haloWidthAt }));
         const wirePopup = (poly, stretchValue) => {
             // Click handler registered before bindPopup so it runs first and
             // the popup content can use the clicked segment.
@@ -721,15 +781,19 @@ export function drawRoads(map, ranked, windowM, mode, rankMode = 'sustained') {
         fg.on('mouseover', () => setHighlight(road, true));
         fg.on('mouseout', () => setHighlight(road, false));
         fg.addTo(group);
-        lines.set(road, { skeleton, chunks, steepest, dp });
+        lines.set(road, { skeleton, haloPolys, chunks, steepest, dp });
     }
 
     // Pixel-based widths mean the ribbon geometry is zoom-dependent.
     const rebuild = () => {
         for (const e of lines.values()) {
+            const geom = roadGeometry(map, e.dp.verts);
+            for (const h of e.haloPolys)
+                h.poly.setLatLngs(h.seg
+                    ? segmentQuads(geom, e.dp.verts, h.iStart, h.iEnd, h.widthAt)
+                    : ribbonRing(geom, e.dp.verts, h.iStart, h.iEnd, h.widthAt, HALO_MITER_MAX));
             if (!e.chunks.length)
                 continue;
-            const geom = roadGeometry(map, e.dp.verts);
             for (const c of e.chunks) {
                 const ring = ribbonRing(geom, e.dp.verts, c.iStart, c.iEnd, c.widthAt);
                 c.poly.setLatLngs(ring);
