@@ -281,10 +281,10 @@ function render() {
     byId('list-title').textContent = {
         climb: 'Hardest climbs — gain × grade',
         sustained: `Steepest roads — sustained ${windowM} m`,
-        incline: `Longest inclines — ≥ ${longLen} m`,
+        incline: `Longest inclines — ${longLen}+ m`,
     }[rankMode];
     const total = rankMode === 'incline' ? ranked.filter(r => r.incline).length : ranked.length;
-    const unit = rankMode === 'incline' ? `inclines ≥ ${longLen} m` : `roads ≥ ${windowM} m`;
+    const unit = rankMode === 'incline' ? `inclines ${longLen}+ m` : `roads ≥ ${windowM} m`;
     byId('list-sub').textContent = `${shortLabel(state.label)} · ${total.toLocaleString()} ${unit}`;
 
     const doneMsg = `${ranked.length.toLocaleString()} roads ranked within ${(state.radiusM / 1000).toFixed(1)} km.`;
