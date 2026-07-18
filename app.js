@@ -20,7 +20,7 @@
 import { parseLatLon, geocode, fetchRoads, prepareRoads } from './roads.js';
 import { elevatePoints } from './elevation.js';
 import { resample, analyzeRoad, segmentSustained, hardestClimbs, grindMask, SAMPLE_STEP } from './metrics.js';
-import { initMap, drawRoads, renderList, setGrindStyle, setRampStyle, setWidthStyle } from './render.js';
+import { initMap, drawRoads, renderList, setGrindStyle, setRampStyle, setWidthStyle, shortLabel } from './render.js';
 import { searchKey, cacheGet, cachePut } from './cache.js';
 import { buildCsv, csvFilename } from './csv.js';
 
@@ -263,7 +263,7 @@ function render() {
     byId('list-title').textContent = rankMode === 'climb'
         ? 'Hardest climbs — gain × grade'
         : `Steepest roads — sustained ${windowM} m`;
-    byId('list-sub').textContent = `${state.label} · ${ranked.length.toLocaleString()} roads ≥ ${windowM} m`;
+    byId('list-sub').textContent = `${shortLabel(state.label)} · ${ranked.length.toLocaleString()} roads ≥ ${windowM} m`;
 
     const doneMsg = `${ranked.length.toLocaleString()} roads ranked within ${(state.radiusM / 1000).toFixed(1)} km.`;
     if (state.cachedAt) {

@@ -44,8 +44,15 @@ const bore = prepareRoads([
     way(7, 'Bore St', [[35.002, -77], [35.003, -77]]),
 ]);
 import { resample, analyzeRoad, segmentSustained, sustainedGrade, bestSustainedWindow, hardestClimb, hardestClimbs, grindMask, SAMPLE_STEP } from '../metrics.js';
-import { abbrevName } from '../render.js';
+import { abbrevName, shortLabel } from '../render.js';
 import { buildCsv, csvFilename } from '../csv.js';
+
+// Place-label shortening for the list sub-line.
+assert(shortLabel('Brevard, Transylvania County, North Carolina, United States') === 'Brevard, Transylvania Co, NC, US',
+    `shortLabel: ${shortLabel('Brevard, Transylvania County, North Carolina, United States')}`);
+assert(shortLabel('Pittsburgh, Allegheny County, Pennsylvania, United States') === 'Pittsburgh, Allegheny Co, PA, US', 'shortLabel PA');
+assert(shortLabel('New Orleans, Orleans Parish, Louisiana, United States') === 'New Orleans, Orleans Par, LA, US', 'shortLabel Parish/LA');
+assert(shortLabel('Toronto, Ontario, Canada') === 'Toronto, Ontario, Canada', 'shortLabel leaves non-US parts alone');
 
 // Street-type abbreviation (display only): common type words shorten, but only
 // as whole Title-Case words, so a name that merely starts with those letters

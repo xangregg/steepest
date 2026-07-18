@@ -205,6 +205,34 @@ const NAME_ABBREV = {
 const NAME_ABBREV_RE = new RegExp(`\\b(${Object.keys(NAME_ABBREV).join('|')})\\b`, 'g');
 export const abbrevName = name => name.replace(NAME_ABBREV_RE, w => NAME_ABBREV[w]);
 
+// US state / DC names -> postal codes, for shortening the verbose Nominatim
+// place label in the list sub-line.
+const US_STATES = {
+    Alabama: 'AL', Alaska: 'AK', Arizona: 'AZ', Arkansas: 'AR', California: 'CA',
+    Colorado: 'CO', Connecticut: 'CT', Delaware: 'DE', Florida: 'FL', Georgia: 'GA',
+    Hawaii: 'HI', Idaho: 'ID', Illinois: 'IL', Indiana: 'IN', Iowa: 'IA', Kansas: 'KS',
+    Kentucky: 'KY', Louisiana: 'LA', Maine: 'ME', Maryland: 'MD', Massachusetts: 'MA',
+    Michigan: 'MI', Minnesota: 'MN', Mississippi: 'MS', Missouri: 'MO', Montana: 'MT',
+    Nebraska: 'NE', Nevada: 'NV', 'New Hampshire': 'NH', 'New Jersey': 'NJ',
+    'New Mexico': 'NM', 'New York': 'NY', 'North Carolina': 'NC', 'North Dakota': 'ND',
+    Ohio: 'OH', Oklahoma: 'OK', Oregon: 'OR', Pennsylvania: 'PA', 'Rhode Island': 'RI',
+    'South Carolina': 'SC', 'South Dakota': 'SD', Tennessee: 'TN', Texas: 'TX', Utah: 'UT',
+    Vermont: 'VT', Virginia: 'VA', Washington: 'WA', 'West Virginia': 'WV',
+    Wisconsin: 'WI', Wyoming: 'WY', 'District of Columbia': 'DC',
+};
+// Shorten a comma-separated Nominatim label: "United States" -> US, state names
+// -> postal codes, and County/Parish/Township -> Co/Par/Twp within a part.
+export function shortLabel(label) {
+    return label.split(',').map(s => {
+        const p = s.trim();
+        if (p === 'United States' || p === 'United States of America')
+            return 'US';
+        if (US_STATES[p])
+            return US_STATES[p];
+        return p.replace(/\bCounty\b/, 'Co').replace(/\bParish\b/, 'Par').replace(/\bTownship\b/, 'Twp');
+    }).join(', ');
+}
+
 // segK: index of the ~25 m sample segment nearest the click, when the popup
 // was opened by clicking the map (null when opened from the list).
 function popupHtml(road, stretchValue, windowM, segK) {
