@@ -370,7 +370,21 @@ window.steepest = {
 
 // Restore a shared/bookmarked search from the URL hash.
 const params = new URLSearchParams(location.hash.slice(1));
-if (params.get('q')) {
+if (params.get('fixture')) {
+    // Offline/dev: render a canned processed-roads fixture (test/fixtures/<name>.json)
+    // with no network, so the app can be checked without Overpass. See
+    // test/make-fixture.mjs for capturing one.
+    status('Loading fixture…');
+    fetch(`test/fixtures/${params.get('fixture')}.json`)
+        .then(r => r.ok ? r.json() : Promise.reject(new Error(`fixture HTTP ${r.status}`)))
+        .then(f => {
+            state = { roads: f.roads, center: f.center, radiusM: f.radiusM, label: f.center.label, cachedAt: null };
+            map.fitBounds(L.latLng(f.center.lat, f.center.lon).toBounds(f.radiusM * 2));
+            render();
+        })
+        .catch(err => status(err.message, { error: true }));
+}
+else if (params.get('q')) {
     byId('place').value = params.get('q');
     if (params.get('r'))
         byId('radius').value = params.get('r');
