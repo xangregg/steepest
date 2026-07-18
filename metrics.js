@@ -311,6 +311,31 @@ export function grindMask(samples, elev, minSpan) {
     return mask.some(v => v) ? mask : null;
 }
 
+// The road's single longest qualifying long-incline (grind) run — its sample
+// endpoints and stats {i, j, span, gain, grade}, or null — using the same rule
+// (and minSpan) as the amber underlay. The ranking value for "Longest inclines".
+export function longestIncline(samples, elev, minSpan) {
+    const mask = grindMask(samples, elev, minSpan);
+    if (!mask)
+        return null;
+    let best = null, a = -1;
+    for (let k = 0; k <= mask.length; k++) {
+        const on = k < mask.length && mask[k];
+        if (on && a < 0) {
+            a = k;
+        }
+        else if (!on && a >= 0) {
+            const span = samples[k].d - samples[a].d;
+            if (!best || span > best.span) {
+                const gain = Math.abs(elev[k] - elev[a]);
+                best = { i: a, j: k, span, gain, grade: gain / span };
+            }
+            a = -1;
+        }
+    }
+    return best;
+}
+
 // Extend the reported extent over adjacent climbing at least this steep. The top
 // (end of the climb in the travel direction) uses a gentler threshold than the
 // bottom, since a slight rise feels tougher late in a long climb.

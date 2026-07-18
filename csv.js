@@ -18,7 +18,7 @@ const endpoint = (road, k) => [road.samples[k].lat.toFixed(6), road.samples[k].l
 // Filename like steepest-climbs-chapel-hill.csv from the place label.
 export function csvFilename(rankMode, windowM, label = 'area') {
     const place = label.split(',')[0].toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-    const what = rankMode === 'climb' ? 'climbs' : `sustained-${Math.round(windowM)}m`;
+    const what = rankMode === 'climb' ? 'climbs' : rankMode === 'incline' ? 'inclines' : `sustained-${Math.round(windowM)}m`;
     return `steepest-${what}-${place || 'area'}.csv`;
 }
 
@@ -32,6 +32,14 @@ export function buildCsv({ entries, rankMode, windowM }) {
             const hi = climb.dir > 0 ? climb.j : climb.i; // top
             rows.push([idx + 1, road.name, climb.score.toFixed(3), (climb.grade * 100).toFixed(3),
                 climb.gain.toFixed(3), climb.span.toFixed(3), ...endpoint(road, lo), ...endpoint(road, hi)]);
+        });
+    }
+    else if (rankMode === 'incline') {
+        rows.push(['rank', 'name', 'length_m', 'grade_pct', 'gain_m',
+            'start_lat', 'start_lon', 'start_elev_m', 'end_lat', 'end_lon', 'end_elev_m']);
+        entries.forEach(({ road, incline }, idx) => {
+            rows.push([idx + 1, road.name, incline.span.toFixed(3), (incline.grade * 100).toFixed(3), incline.gain.toFixed(3),
+                ...endpoint(road, incline.i), ...endpoint(road, incline.j)]);
         });
     }
     else {

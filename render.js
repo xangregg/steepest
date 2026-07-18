@@ -168,8 +168,9 @@ export function initMap(el, mode) {
         // Below the ticks and swatch-sized, so the % scale clearly doesn't
         // apply to the categorical grind color.
         const grindRow = `<div class="legend-row legend-grind"><div class="legend-swatch" style="background:${GRIND_COLORS[m]};opacity:${GRIND_OPACITY}"></div><span class="legend-label">long incline (≥${+(GRIND_MIN_GRADE * 100).toFixed(2)}%)</span></div>`;
-        // Both modes reserve red for the listed roads and violet for the rest.
-        const listLabel = rankMode === 'climb' ? `top ${topN} climbs` : `top ${topN} roads`;
+        // Every mode reserves red for the listed items and violet for the rest.
+        const noun = rankMode === 'climb' ? 'climbs' : rankMode === 'incline' ? 'inclines' : 'roads';
+        const listLabel = `top ${topN} ${noun}`;
         legendDiv.innerHTML = `<div class="legend-title">grade</div>
                <div class="legend-row">${barDiv(rampCss(RAMPS[m]))}<span class="legend-label">${listLabel}</span></div>
                <div class="legend-row">${barDiv(rampCss(RAMPS_ALT[m]))}<span class="legend-label">other steep</span></div>
@@ -188,6 +189,8 @@ const fmtLen = m => m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${Math.round(m)
 // rounded, so they don't divide to exactly the displayed grade. Shared by the
 // list rows and the map popup.
 const fmtClimb = c => `↑${Math.round(c.gain)}m/${Math.round(c.span)}m ≈ ${fmtPct(c.grade)}`;
+// Incline-list sub-line: gain and average grade (the length is the row's value).
+const fmtIncline = c => `↑${Math.round(c.gain)}m ≈ ${fmtPct(c.grade)}`;
 const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
 // Shorten common street-type words for the narrow list, so long names wrap
@@ -739,13 +742,12 @@ export function drawRoads(map, ranked, windowM, mode, rankMode = 'sustained') {
     return {
         group,
         highlight: setHighlight,
-        focus(road, climb) {
+        focus(road, target) {
             const e = lines.get(road);
             if (!e)
                 return;
-            // Frame the given climb (or the road's hardest) in climb mode,
-            // the whole road otherwise.
-            const target = isClimbMode ? climb ?? road.climbs?.[0] : null;
+            // Frame the given extent (a climb or an incline) if any, else the
+            // whole road (sustained mode).
             const pts = target
                 ? road.samples.slice(target.i, target.j + 1)
                 : road.samples;
@@ -775,28 +777,30 @@ export function drawRoads(map, ranked, windowM, mode, rankMode = 'sustained') {
 // climb mode bar length is the climb score and the color is the climb's grade.
 export function renderList(el, entries, mode, { rankMode = 'sustained', onHover, onClick }) {
     const color = makeGradeColor(RAMPS[mode]);
-    const isClimb = rankMode === 'climb';
+    // Per-mode row fields: the bar length is `rankVal`, its color the `grade`,
+    // the sub-line under the name, and the right-hand value label.
+    const isClimb = rankMode === 'climb', isIncline = rankMode === 'incline';
+    const rankVal = e => isClimb ? e.climb.score : isIncline ? e.incline.span : e.road.value;
+    const grade = e => isClimb ? e.climb.grade : isIncline ? e.incline.grade : e.road.value;
+    const subOf = e => isClimb ? fmtClimb(e.climb) : isIncline ? fmtIncline(e.incline) : fmtLen(e.road.length);
+    const valueOf = e => isClimb ? e.climb.score.toFixed(1) : isIncline ? fmtLen(e.incline.span) : fmtPct(e.road.value);
     el.replaceChildren();
     if (!entries.length)
         return;
-    const top = (isClimb ? entries[0].climb.score : entries[0].road.value) || 1e-9;
+    const top = rankVal(entries[0]) || 1e-9;
     entries.forEach((entry, i) => {
-        const { road, climb } = entry;
+        const { road } = entry;
         const row = document.createElement('button');
         row.type = 'button';
         row.className = 'road-row';
-        const value = isClimb ? climb.score : road.value;
-        const sub = isClimb
-            ? fmtClimb(climb)
-            : fmtLen(road.length);
         row.innerHTML = `
             <span class="road-rank">${i + 1}</span>
             <span class="road-main">
                 <span class="road-name" title="${esc(road.name)}">${esc(abbrevName(road.name))}</span>
-                <span class="road-sub">${sub}</span>
-                <span class="road-track"><span class="road-bar" style="width:${Math.max(2, (value / top) * 100)}%;background:${color(isClimb ? climb.grade : road.value)}"></span></span>
+                <span class="road-sub">${subOf(entry)}</span>
+                <span class="road-track"><span class="road-bar" style="width:${Math.max(2, (rankVal(entry) / top) * 100)}%;background:${color(grade(entry))}"></span></span>
             </span>
-            <span class="road-value">${isClimb ? value.toFixed(1) : fmtPct(value)}</span>`;
+            <span class="road-value">${valueOf(entry)}</span>`;
         row.addEventListener('mouseenter', () => onHover(entry, true));
         row.addEventListener('mouseleave', () => onHover(entry, false));
         row.addEventListener('click', () => onClick(entry));

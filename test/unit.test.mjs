@@ -43,7 +43,7 @@ const bore = prepareRoads([
     tunnelWay,
     way(7, 'Bore St', [[35.002, -77], [35.003, -77]]),
 ]);
-import { resample, analyzeRoad, segmentSustained, sustainedGrade, bestSustainedWindow, hardestClimb, hardestClimbs, grindMask, SAMPLE_STEP } from '../metrics.js';
+import { resample, analyzeRoad, segmentSustained, sustainedGrade, bestSustainedWindow, hardestClimb, hardestClimbs, grindMask, longestIncline, SAMPLE_STEP } from '../metrics.js';
 import { abbrevName, shortLabel } from '../render.js';
 import { buildCsv, csvFilename } from '../csv.js';
 
@@ -84,10 +84,15 @@ const sustCsv = buildCsv({ entries: [{ road: csvRoad, climb: null }], rankMode: 
 const sLines = sustCsv.replace(/^\ufeff/, '').trimEnd().split('\r\n');
 assert(sLines[0] === 'rank,name,grade_pct,window_m,road_length_m,start_lat,start_lon,start_elev_m,end_lat,end_lon,end_elev_m', 'sustained CSV header');
 assert(sLines[1].split(',')[3] === '250', 'sustained CSV window_m column');
+const inclineCsv = buildCsv({ entries: [{ road: csvRoad, incline: { i: 0, j: 20, span: 500, gain: 50, grade: 0.10 } }], rankMode: 'incline', windowM: 250 });
+const iLines = inclineCsv.replace(/^\ufeff/, '').trimEnd().split('\r\n');
+assert(iLines[0] === 'rank,name,length_m,grade_pct,gain_m,start_lat,start_lon,start_elev_m,end_lat,end_lon,end_elev_m', 'incline CSV header');
+assert(iLines[1].split(',')[2] === '500.000', `incline CSV length column: ${iLines[1].split(',')[2]}`);
 const commaCsv = buildCsv({ entries: [{ road: { ...csvRoad, name: 'A, B Road' }, climb: csvRoad.climbs[0] }], rankMode: 'climb', windowM: 250 });
 assert(commaCsv.includes('"A, B Road"'), 'CSV quotes a name containing a comma');
 assert(csvFilename('climb', 250, 'Chapel Hill, NC') === 'steepest-climbs-chapel-hill.csv', 'csv filename (climb)');
 assert(csvFilename('sustained', 250, 'Chapel Hill, NC') === 'steepest-sustained-250m-chapel-hill.csv', 'csv filename (sustained)');
+assert(csvFilename('incline', 250, 'Chapel Hill, NC') === 'steepest-inclines-chapel-hill.csv', 'csv filename (incline)');
 
 assert(chains('Straight St') === 1, 'collinear same-name ways stitch into one road');
 assert(chains('Corner St') === 2, 'right-angle same-name ways stay separate');
@@ -211,6 +216,14 @@ for (let k = 0; k < vMask.length; k++)
         gap.push(k);
 assert(gap.length >= 1 && gap.every(k => Math.abs(k - midSeg) < 4),
     `V splits at the valley bottom (unmasked segs: ${gap.join(',')})`);
+// longestIncline: the longest qualifying run with its span/grade (the "Longest
+// inclines" ranking value); the V road's two ~1.5 km sides each beat the 1 km
+// window, and the longest is returned.
+const li = longestIncline(flat, mkElev(d => d * 0.025), 1000);
+assert(li && li.span > 900 && Math.abs(li.grade - 0.025) < 0.006, `longest incline ${li && li.span.toFixed(0)} m @ ${li && (li.grade * 100).toFixed(1)}%`);
+assert(longestIncline(flat, mkElev(d => d * 0.01), 1000) === null, 'no qualifying incline -> null');
+const vLong = longestIncline(vRoad, analyzeRoad(vRoad, vRoad.map(s => Math.abs(s.d - 1500) * 0.03)).elev, 1000);
+assert(vLong && vLong.span > 1000, `V road's longest incline side is ~1.5 km (${vLong && vLong.span.toFixed(0)} m)`);
 
 // Bridge interpolation: a 5% road crossing a 40 m-deep gorge on a bridge
 // (middle third flagged b) must read ~5%, not a cliff.

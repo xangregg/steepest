@@ -19,7 +19,7 @@
 
 import { parseLatLon, geocode, fetchRoads, prepareRoads } from './roads.js';
 import { elevatePoints } from './elevation.js';
-import { resample, analyzeRoad, segmentSustained, hardestClimbs, grindMask, SAMPLE_STEP } from './metrics.js';
+import { resample, analyzeRoad, segmentSustained, hardestClimbs, grindMask, longestIncline, SAMPLE_STEP } from './metrics.js';
 import { initMap, drawRoads, renderList, setGrindStyle, setRampStyle, setWidthStyle, shortLabel } from './render.js';
 import { searchKey, cacheGet, cachePut } from './cache.js';
 import { buildCsv, csvFilename } from './csv.js';
@@ -219,6 +219,24 @@ function render() {
         for (const e of entries)
             (e.road.topExtents ??= []).push([e.climb.i, e.climb.j]);
     }
+    else if (rankMode === 'incline') {
+        // Rank by each road's longest qualifying long-incline (grind) run,
+        // using the same rule as the amber underlay. One row per road (deduped
+        // by name); the whole map still draws, with listed roads red.
+        for (const r of ranked)
+            r.incline = longestIncline(r.samples, r.elev, longLen);
+        entries = [];
+        const seen = new Set();
+        for (const r of ranked.filter(r => r.incline).sort((a, b) => b.incline.span - a.incline.span)) {
+            if (!r.unnamed && seen.has(r.name))
+                continue;
+            seen.add(r.name);
+            entries.push({ road: r, climb: null, incline: r.incline });
+            r.listed = true;
+            if (entries.length >= listMax)
+                break;
+        }
+    }
     else {
         ranked.sort((a, b) => b.value - a.value);
         // The list dedupes by name (a road split into disjoint pieces keeps
@@ -254,16 +272,20 @@ function render() {
     renderList(byId('road-list'), entries, mode(), {
         rankMode,
         onHover: (entry, on) => layer.highlight(entry.road, on),
-        onClick: entry => layer.focus(entry.road, entry.climb),
+        onClick: entry => layer.focus(entry.road, entry.climb ?? entry.incline),
     });
 
     downloadCtx = { entries, rankMode, windowM, filename: csvFilename(rankMode, windowM, state.label) };
     byId('download').hidden = entries.length === 0;
 
-    byId('list-title').textContent = rankMode === 'climb'
-        ? 'Hardest climbs — gain × grade'
-        : `Steepest roads — sustained ${windowM} m`;
-    byId('list-sub').textContent = `${shortLabel(state.label)} · ${ranked.length.toLocaleString()} roads ≥ ${windowM} m`;
+    byId('list-title').textContent = {
+        climb: 'Hardest climbs — gain × grade',
+        sustained: `Steepest roads — sustained ${windowM} m`,
+        incline: `Longest inclines — ≥ ${longLen} m`,
+    }[rankMode];
+    const total = rankMode === 'incline' ? ranked.filter(r => r.incline).length : ranked.length;
+    const unit = rankMode === 'incline' ? `inclines ≥ ${longLen} m` : `roads ≥ ${windowM} m`;
+    byId('list-sub').textContent = `${shortLabel(state.label)} · ${total.toLocaleString()} ${unit}`;
 
     const doneMsg = `${ranked.length.toLocaleString()} roads ranked within ${(state.radiusM / 1000).toFixed(1)} km.`;
     if (state.cachedAt) {
@@ -379,6 +401,8 @@ if (params.get('fixture')) {
         .then(r => r.ok ? r.json() : Promise.reject(new Error(`fixture HTTP ${r.status}`)))
         .then(f => {
             state = { roads: f.roads, center: f.center, radiusM: f.radiusM, label: f.center.label, cachedAt: null };
+            if (['climb', 'sustained', 'incline'].includes(params.get('mode')))
+                byId('rankmode').value = params.get('mode');
             map.fitBounds(L.latLng(f.center.lat, f.center.lon).toBounds(f.radiusM * 2));
             render();
             // Optional close-up for inspecting a spot: #fixture=brevard&z=16&lat=..&lon=..

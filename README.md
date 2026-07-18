@@ -30,7 +30,7 @@ Code and docs were largely written using Claude Code (Fable 5 and Opus 4.8).
    (Mapzen terrarium PNGs, decoded pixel-by-pixel in a canvas — free, global,
    no API key). Elevations get a 3-point moving average to tame noise in the
    digital elevation model (DEM).
-4. **Metrics** — two ranking modes:
+4. **Metrics** — three ranking modes:
    - **Hardest climb** (default): effort rather than grade — each road's best
      continuous climb (in either travel direction), scored by the **effort
      integral** Σ segment length × grade², which equals gain × average grade
@@ -50,6 +50,11 @@ Code and docs were largely written using Claude Code (Fable 5 and Opus 4.8).
      input: 25 m degenerates to "steepest single segment" (noisy — treat with
      skepticism), longer windows reward genuinely long climbs. Roads shorter
      than the window are excluded, since the metric is undefined for them.
+   - **Longest incline**: the length of the road's longest long-incline run —
+     the same mostly-monotonic, ≥ 2.25 % stretches (of at least the "long
+     incline" length) that get the amber underlay described below. Ranks roads
+     by how far the hill goes rather than how steep it gets; roads with no
+     qualifying incline drop out.
 
    Changing mode or window re-ranks instantly from cached elevation profiles.
 5. **Caching** — processed results (roads with elevation profiles) are cached
