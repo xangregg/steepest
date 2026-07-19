@@ -55,6 +55,92 @@ body {
     color: var(--ink-2);
     white-space: nowrap;
 }
+.title-links {
+    display: flex;
+    align-items: baseline;
+    gap: 14px;
+    white-space: nowrap;
+}
+/* The "How to read" button, dressed to sit beside the repo link. */
+.link-btn {
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+.link-btn:hover {
+    color: var(--ink);
+}
+
+#howto-dialog {
+    max-width: 34rem;
+    width: calc(100% - 32px);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px 24px 20px;
+    background: var(--surface);
+    color: var(--ink);
+    box-shadow: 0 12px 44px rgba(0, 0, 0, 0.28);
+}
+#howto-dialog::backdrop {
+    background: rgba(0, 0, 0, 0.4);
+}
+#howto-dialog form {
+    display: flex;
+    justify-content: flex-end;
+}
+.dialog-close {
+    background: none;
+    border: none;
+    font-size: 1.5rem;
+    line-height: 1;
+    color: var(--muted);
+    cursor: pointer;
+    padding: 0 4px;
+    margin: -4px -10px 0 0;
+}
+.dialog-close:hover {
+    color: var(--ink);
+}
+#howto-dialog h2 {
+    margin: 0 0 12px;
+    font-size: 1.1rem;
+    font-weight: 650;
+}
+#howto-dialog ul {
+    margin: 0;
+    padding-left: 1.1em;
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+    font-size: 0.9rem;
+    line-height: 1.45;
+    color: var(--ink-2);
+}
+#howto-dialog li b {
+    color: var(--ink);
+    font-weight: 620;
+}
+#howto-dialog .fine-print {
+    margin: 14px 0 0;
+}
+/* Ranking modes as a 2-column table: term | description, one row per mode. */
+#howto-dialog dl {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 3px 14px;
+    margin: 5px 0 2px;
+}
+#howto-dialog dt {
+    font-style: italic;
+    color: var(--ink);
+    white-space: nowrap;
+}
+#howto-dialog dd {
+    margin: 0;
+}
 /* #controls = search (place/radius/go) in the map panel, laid out in a row;
    #rank-controls = ranking inputs in the rank panel, stacked. Both share the
    field styling below. */

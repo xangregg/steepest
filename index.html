@@ -17,7 +17,10 @@
         <div id="map-controls">
             <div class="title-row">
                 <h1>Steepest road in town</h1>
-                <a class="repo-link" href="https://github.com/xangregg/steepest">Source on GitHub</a>
+                <div class="title-links">
+                    <button type="button" id="howto" class="repo-link link-btn" aria-haspopup="dialog">How to read</button>
+                    <a class="repo-link" href="https://github.com/xangregg/steepest">Source on GitHub</a>
+                </div>
             </div>
             <form id="controls">
                 <label>Place
@@ -75,6 +78,22 @@
         </div>
     </aside>
 </main>
+<dialog id="howto-dialog" aria-labelledby="howto-title">
+    <form method="dialog"><button class="dialog-close" aria-label="Close">×</button></form>
+    <h2 id="howto-title">How to read this map</h2>
+    <ul>
+        <li><b>Color is steepness.</b> Roads are tinted on a 5–25 % grade scale: red for top-ranked items, purple for other steep segments.</li>
+        <li><b>The amber underlay marks long inclines</b> — mostly-monotonic stretches averaging ≥ 2.25 %. Inclines can span several connected roads.</li>
+        <li><b>Pick what to rank by:</b>
+            <dl><dt>Steepest</dt> <dd>best average grade over the sustained length</dd>
+                <dt>Hardest climb</dt><dd>gain × grade of a continuous climb</dd>
+                <dt>Longest incline</dt><dd>length, possibly across multiple roads</dd></dl></li>
+        <li><b>The list on the right</b> ranks the top roads. Hover a row to highlight it on the map; click to zoom in.
+        The CSV button downloads the list data.</li>
+        <li><b>Click any road segment</b> for its detailed grade and elevation data.</li>
+    </ul>
+    <p class="fine-print">Elevations come from ~10–30 m DEM data, so short-segment grades are approximate — longer sustained lengths resist that noise.</p>
+</dialog>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
         integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 <script type="module" src="app.js"></script>

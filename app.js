@@ -365,6 +365,15 @@ function downloadCsv() {
 }
 byId('download').addEventListener('click', downloadCsv);
 
+// "How to read" help dialog (native <dialog>: the × and Esc close it; also close
+// on a backdrop click, whose event target is the dialog element itself).
+const howtoDialog = byId('howto-dialog');
+byId('howto').addEventListener('click', () => howtoDialog.showModal());
+howtoDialog.addEventListener('click', e => {
+    if (e.target === howtoDialog)
+        howtoDialog.close();
+});
+
 byId('controls').addEventListener('submit', e => {
     e.preventDefault();
     void run();
