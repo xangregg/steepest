@@ -7,7 +7,8 @@ span) — get a map of roads colored by steepness plus a ranked bar list of the
 steepest ones.
 
 Everything runs in the browser against free public APIs; there is no backend and
-no database, so it hosts happily on GitHub Pages.
+no database, so it hosts happily on GitHub Pages —
+**[try it live](https://xangregg.github.io/steepest/)**.
 
 Code and docs were largely written using Claude Code (Fable 5 and Opus 4.8).
 
@@ -166,7 +167,7 @@ All of them need `npm install` once (for `pngjs`).
 ## Deploying to GitHub Pages
 
 Push to GitHub, then Settings → Pages → deploy from branch `main`, root folder.
-No build step.
+No build step. This repo is live at <https://xangregg.github.io/steepest/>.
 
 ## Known limitations
 
