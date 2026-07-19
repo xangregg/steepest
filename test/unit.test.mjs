@@ -43,7 +43,7 @@ const bore = prepareRoads([
     tunnelWay,
     way(7, 'Bore St', [[35.002, -77], [35.003, -77]]),
 ]);
-import { resample, analyzeRoad, segmentSustained, sustainedGrade, bestSustainedWindow, hardestClimb, hardestClimbs, grindMask, longestIncline, SAMPLE_STEP } from '../metrics.js';
+import { resample, analyzeRoad, segmentSustained, sustainedGrade, bestSustainedWindow, hardestClimb, hardestClimbs, grindMask, longestIncline, longestInclinePaths, SAMPLE_STEP } from '../metrics.js';
 import { abbrevName, shortLabel } from '../render.js';
 import { buildCsv, csvFilename } from '../csv.js';
 
@@ -84,10 +84,16 @@ const sustCsv = buildCsv({ entries: [{ road: csvRoad, climb: null }], rankMode: 
 const sLines = sustCsv.replace(/^\ufeff/, '').trimEnd().split('\r\n');
 assert(sLines[0] === 'rank,name,grade_pct,window_m,road_length_m,start_lat,start_lon,start_elev_m,end_lat,end_lon,end_elev_m', 'sustained CSV header');
 assert(sLines[1].split(',')[3] === '250', 'sustained CSV window_m column');
-const inclineCsv = buildCsv({ entries: [{ road: csvRoad, incline: { i: 0, j: 20, span: 500, gain: 50, grade: 0.10 } }], rankMode: 'incline', windowM: 250 });
+const inclineEntry = { incline: {
+    roads: [{ name: 'Lower Rd' }, { name: 'Upper Rd' }], span: 1400, grade: 0.06, gain: 84,
+    start: { lat: 35, lon: -82, elev: 3.2 }, end: { lat: 35.012, lon: -82, elev: 87.5 },
+} };
+const inclineCsv = buildCsv({ entries: [inclineEntry], rankMode: 'incline', windowM: 250 });
 const iLines = inclineCsv.replace(/^\ufeff/, '').trimEnd().split('\r\n');
-assert(iLines[0] === 'rank,name,length_m,grade_pct,gain_m,start_lat,start_lon,start_elev_m,end_lat,end_lon,end_elev_m', 'incline CSV header');
-assert(iLines[1].split(',')[2] === '500.000', `incline CSV length column: ${iLines[1].split(',')[2]}`);
+assert(iLines[0] === 'rank,name,roads,length_m,grade_pct,gain_m,start_lat,start_lon,start_elev_m,end_lat,end_lon,end_elev_m', 'incline CSV header');
+const iCols = iLines[1].split(',');
+assert(iCols[1] === 'Lower Rd + Upper Rd' && iCols[3] === '1400.000', `incline CSV name/length: ${iCols[1]},${iCols[3]}`);
+assert(iCols[2] === '2', `incline CSV roads count: ${iCols[2]}`);
 const commaCsv = buildCsv({ entries: [{ road: { ...csvRoad, name: 'A, B Road' }, climb: csvRoad.climbs[0] }], rankMode: 'climb', windowM: 250 });
 assert(commaCsv.includes('"A, B Road"'), 'CSV quotes a name containing a comma');
 assert(csvFilename('climb', 250, 'Chapel Hill, NC') === 'steepest-climbs-chapel-hill.csv', 'csv filename (climb)');
@@ -224,6 +230,23 @@ assert(li && li.span > 900 && Math.abs(li.grade - 0.025) < 0.006, `longest incli
 assert(longestIncline(flat, mkElev(d => d * 0.01), 1000) === null, 'no qualifying incline -> null');
 const vLong = longestIncline(vRoad, analyzeRoad(vRoad, vRoad.map(s => Math.abs(s.d - 1500) * 0.03)).elev, 1000);
 assert(vLong && vLong.span > 1000, `V road's longest incline side is ~1.5 km (${vLong && vLong.span.toFixed(0)} m)`);
+
+// Multi-road inclines: two ~600 m roads meeting end-to-end, elevation climbing
+// straight through the join. Neither is a 1 km incline alone, but together they
+// are — longestInclinePaths(…, 2) must find and report the combined run.
+const mkRoad = (a, b, name, e0) => {
+    const s = resample([a, b]);
+    return { id: name, name, unnamed: false, samples: s, elev: s.map(p => e0 + p.d * 0.05) };
+};
+const lower = mkRoad({ lat: 35, lon: -82 }, { lat: 35.0054, lon: -82 }, 'Lower Rd', 0);
+const upper = mkRoad({ lat: 35.0054, lon: -82 }, { lat: 35.0108, lon: -82 }, 'Upper Rd', lower.elev.at(-1));
+const solo = longestInclinePaths([lower, upper], 1000, 1);
+assert(solo.length === 0, `neither ~600 m road alone is a 1 km incline (${solo.length} found)`);
+const joined = longestInclinePaths([lower, upper], 1000, 2);
+assert(joined.length === 1 && joined[0].roads.length === 2 && joined[0].span > 1000,
+    `incline spans both roads (${joined[0] && joined[0].span.toFixed(0)} m over ${joined[0] && joined[0].roads.length} roads)`);
+assert(Math.abs(joined[0].grade - 0.05) < 0.01, `combined incline grade ~5% (${joined[0] && (joined[0].grade * 100).toFixed(1)}%)`);
+assert(joined[0].start.elev < joined[0].end.elev, 'incline start is the low end');
 
 // Bridge interpolation: a 5% road crossing a 40 m-deep gorge on a bridge
 // (middle third flagged b) must read ~5%, not a cliff.

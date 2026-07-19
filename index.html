@@ -56,6 +56,10 @@
             <label>Long incline
                 <input id="longlen" type="number" min="200" max="5000" step="50" value="800"
                        title="Mostly monotonic stretches at least this long, averaging ≥2.25%, get the amber long-incline underlay."> m
+                <span class="inline-knob">over
+                    <input id="inclineroads" type="number" min="1" max="5" step="1" value="1"
+                           title="Longest-incline mode only: how many connected roads one incline may span. 1 keeps each incline on a single named road; higher lets it continue across junctions onto adjoining roads.">
+                    road(s)</span>
             </label>
         </div>
         <div id="rank-list-area">

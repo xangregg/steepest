@@ -2,8 +2,9 @@
 
 A static web app that answers the question: **what's the steepest road in town?**
 Type a town name (or `lat, lon`), pick a search radius, a sustained-stretch
-length, and a long-incline length — get a map of roads colored by steepness plus
-a ranked bar list of the steepest ones.
+length, and a long-incline length (and how many connected roads an incline may
+span) — get a map of roads colored by steepness plus a ranked bar list of the
+steepest ones.
 
 Everything runs in the browser against free public APIs; there is no backend and
 no database, so it hosts happily on GitHub Pages.
@@ -50,11 +51,17 @@ Code and docs were largely written using Claude Code (Fable 5 and Opus 4.8).
      hills can take two list spots (same-name entries are deduped
      geographically, so parallel carriageways still yield one row per
      physical climb).
-   - **Longest incline**: the length of the road's longest long-incline run —
-     the same mostly-monotonic, ≥ 2.25 % stretches (of at least the "long
-     incline" length) that get the amber underlay described below. Ranks roads
-     by how far the hill goes rather than how steep it gets; roads with no
-     qualifying incline drop out.
+   - **Longest incline**: the length of the longest long-incline run — the same
+     mostly-monotonic, ≥ 2.25 % stretches (of at least the "long incline" length)
+     that get the amber underlay described below. Ranks by how far the hill goes
+     rather than how steep it gets. An incline may span several **connected
+     roads** (the "over N roads" knob): a climb that continues across a junction
+     onto a differently-named road is followed through a junction graph (built
+     from coincident sample points, so it handles a road ending mid-way along the
+     next) and reported as one incline, e.g. "Burrell Mountain Rd + Whitmire St".
+     A bounded search over chained road slices runs the same grind rule on each
+     chain's combined elevation profile; results are de-duplicated so no road
+     appears in two, and a multi-road incline supersedes its single-road pieces.
 
    Changing mode or window re-ranks instantly from cached elevation profiles.
 5. **Caching** — processed results (roads with elevation profiles) are cached
@@ -73,7 +80,11 @@ Code and docs were largely written using Claude Code (Fable 5 and Opus 4.8).
    translucent amber underlay beneath the steepness ribbons, so a mile-long
    2.5 % incline is acknowledged instead of invisible; its width flare
    accumulates over the whole incline, unbroken by whatever steep colors sit
-   on top. In hardest-climb mode, the listed (top-25) roads' climbs wear the
+   on top. An incline that runs across junctions onto connected roads (up to the
+   "over N roads" count) is drawn as one unbroken amber ribbon — via a synthetic
+   "virtual road" spanning its exact extent — in every ranking mode, so the amber
+   reflects the same multi-road inclines the incline ranking finds. In
+   hardest-climb mode, the listed (top-N) roads' climbs wear the
    red gradient while all other steep stretches use a contrasting violet
    gradient (same 5–25 % scale), so map color mirrors the ranking. A winning
    climb is also kept visually continuous: any flat or gentle stretch inside
@@ -141,8 +152,9 @@ responsive.
 ## Testing
 
 `npm test` runs the network-free unit checks (stitching, resampling, the metric
-and climb math, long-incline masking, bridge/tunnel interpolation, CSV export)
-on synthetic profiles — fast and safe for CI, no network needed.
+and climb math, long-incline masking, multi-road incline paths, bridge/tunnel
+interpolation, CSV export) on synthetic profiles — fast and safe for CI, no
+network needed.
 
 `npm run test:live` runs the on-demand end-to-end check: a real
 Nominatim/Overpass/terrain-tile run against a small town (`pngjs` stands in for

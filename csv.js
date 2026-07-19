@@ -35,11 +35,14 @@ export function buildCsv({ entries, rankMode, windowM }) {
         });
     }
     else if (rankMode === 'incline') {
-        rows.push(['rank', 'name', 'length_m', 'grade_pct', 'gain_m',
+        // An incline may span several roads; name lists them and roads counts them.
+        rows.push(['rank', 'name', 'roads', 'length_m', 'grade_pct', 'gain_m',
             'start_lat', 'start_lon', 'start_elev_m', 'end_lat', 'end_lon', 'end_elev_m']);
-        entries.forEach(({ road, incline }, idx) => {
-            rows.push([idx + 1, road.name, incline.span.toFixed(3), (incline.grade * 100).toFixed(3), incline.gain.toFixed(3),
-                ...endpoint(road, incline.i), ...endpoint(road, incline.j)]);
+        const pt = p => [p.lat.toFixed(6), p.lon.toFixed(6), p.elev.toFixed(3)];
+        entries.forEach(({ incline }, idx) => {
+            rows.push([idx + 1, incline.roads.map(r => r.name).join(' + '), incline.roads.length,
+                incline.span.toFixed(3), (incline.grade * 100).toFixed(3), incline.gain.toFixed(3),
+                ...pt(incline.start), ...pt(incline.end)]);
         });
     }
     else {

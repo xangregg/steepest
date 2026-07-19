@@ -258,7 +258,9 @@ function popupHtml(road, stretchValue, windowM, segK) {
         const e0 = road.elev[segK], e1 = road.elev[segK + 1];
         const g = Math.abs(e1 - e0) / (s1.d - s0.d);
         localRows = `
-        <div class="popup-row popup-active"><span>This ${(s1.d - s0.d).toFixed(1)} m segment</span><b>${fmtPct(g)} · ${e0.toFixed(1)}→${e1.toFixed(1)} m</b></div>
+        <div class="popup-row popup-active"><span>This ${(s1.d - s0.d).toFixed(1)} m segment</span><b>${fmtPct(g)} · ${e0.toFixed(1)}→${e1.toFixed(1)} m</b></div>`;
+        if (road.segs)
+            localRows += `
         <div class="popup-row"><span>Sustained ${windowM} m here</span><b>${fmtPct(road.segs[segK])}</b></div>`;
         // When the click lands on a long incline, describe its whole run.
         if (road.grind?.[segK]) {
@@ -314,6 +316,11 @@ const PAINT_LOCAL_CAP = 1.0; // paint never exceeds this × the segment's own lo
 // (climb-interval boundaries, so climb and non-climb hues never share a chunk).
 function colorChunks(road, splitAt) {
     const { samples, segs, elev } = road;
+    // Roads shorter than the sustained window have no segment grades — nothing to
+    // paint. They still draw a skeleton/halo and (in incline mode) get haloed as
+    // part of a multi-road incline; they just contribute no colored ribbon.
+    if (!segs)
+        return [];
     // Paint starts from the sustained-window value (plus the climb floor in
     // climb mode) but is capped relative to the segment's own grade, so color
     // doesn't bleed past where a hill really ends.
@@ -649,16 +656,16 @@ export function drawRoads(map, ranked, windowM, mode, rankMode = 'sustained') {
         zIndex: '700', pointerEvents: 'none', display: 'none',
         filter: 'drop-shadow(0 0 2px rgba(0,0,0,.55))',
     });
-    let arrowRoad = null;
+    let arrowLatLngs = null; // [[lat,lon]...] of the hovered road/incline, or null
 
     function updateArrow() {
-        if (!arrowRoad) {
+        if (!arrowLatLngs) {
             arrow.style.display = 'none';
             return;
         }
-        const bounds = L.latLngBounds(arrowRoad.samples.map(s => [s.lat, s.lon]));
+        const bounds = L.latLngBounds(arrowLatLngs);
         if (map.getBounds().intersects(bounds)) {
-            // Any part of the road is visible — the halo already marks it.
+            // Any part of the target is visible — the halo already marks it.
             arrow.style.display = 'none';
             return;
         }
@@ -679,7 +686,7 @@ export function drawRoads(map, ranked, windowM, mode, rankMode = 'sustained') {
     // Keep the arrow correct if the map moves while a row stays hovered.
     map.on('move zoom', updateArrow);
 
-    function setHighlight(road, on) {
+    function setHighlight(road, on, manageArrow = true) {
         const e = lines.get(road);
         if (!e)
             return;
@@ -705,8 +712,10 @@ export function drawRoads(map, ranked, windowM, mode, rankMode = 'sustained') {
                 poly.setStyle({ opacity: on ? 1 : 0, fillOpacity: 1 });
             }
         }
-        arrowRoad = on ? road : null;
-        updateArrow();
+        if (manageArrow) {
+            arrowLatLngs = on ? road.samples.map(s => [s.lat, s.lon]) : null;
+            updateArrow();
+        }
     }
 
     for (const road of [...ranked].reverse()) {
@@ -784,7 +793,7 @@ export function drawRoads(map, ranked, windowM, mode, rankMode = 'sustained') {
                     const kStart = a, kEnd = k; // sample range of the run
                     let best = 0;
                     for (let m = kStart; m < kEnd; m++)
-                        best = Math.max(best, road.segs[m]);
+                        best = Math.max(best, road.segs?.[m] ?? 0);
                     const c = GRIND_COLORS[mode];
                     const widthAt = runWidthAt(kStart, kEnd);
                     const iStart = dp.sampleIdx[kStart], iEnd = dp.sampleIdx[kEnd];
@@ -905,6 +914,16 @@ export function drawRoads(map, ranked, windowM, mode, rankMode = 'sustained') {
     return {
         group,
         highlight: setHighlight,
+        // A multi-road incline: halo its virtual road (the exact extent) and aim
+        // the off-screen arrow at that extent, not any one whole road.
+        highlightIncline(incline, on) {
+            setHighlight(incline.virtual, on, false);
+            arrowLatLngs = on ? incline.path : null;
+            updateArrow();
+        },
+        focusIncline(incline) {
+            map.fitBounds(L.latLngBounds(incline.path).pad(0.3));
+        },
         focus(road, target) {
             const e = lines.get(road);
             if (!e)
@@ -949,19 +968,21 @@ export function renderList(el, entries, mode, { rankMode = 'sustained', onHover,
     const grade = e => isClimb ? e.climb.grade : isIncline ? e.incline.grade : e.road.value;
     const subOf = e => isClimb ? fmtClimb(e.climb) : isIncline ? fmtIncline(e.incline) : fmtLen(e.road.length);
     const valueOf = e => isClimb ? e.climb.score.toFixed(1) : isIncline ? fmtLen(e.incline.span) : fmtPct(e.road.value);
+    // An incline may span several roads; name it by all of them joined.
+    const fullName = e => isIncline ? e.incline.roads.map(r => r.name).join(' + ') : e.road.name;
+    const showName = e => isIncline ? e.incline.roads.map(r => abbrevName(r.name)).join(' + ') : abbrevName(e.road.name);
     el.replaceChildren();
     if (!entries.length)
         return;
     const top = rankVal(entries[0]) || 1e-9;
     entries.forEach((entry, i) => {
-        const { road } = entry;
         const row = document.createElement('button');
         row.type = 'button';
         row.className = 'road-row';
         row.innerHTML = `
             <span class="road-rank">${i + 1}</span>
             <span class="road-main">
-                <span class="road-name" title="${esc(road.name)}">${esc(abbrevName(road.name))}</span>
+                <span class="road-name" title="${esc(fullName(entry))}">${esc(showName(entry))}</span>
                 <span class="road-sub">${subOf(entry)}</span>
                 <span class="road-track"><span class="road-bar" style="width:${Math.max(2, (rankVal(entry) / top) * 100)}%;background:${color(grade(entry))}"></span></span>
             </span>

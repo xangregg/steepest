@@ -19,7 +19,7 @@
 
 import { parseLatLon, geocode, fetchRoads, prepareRoads } from './roads.js';
 import { elevatePoints } from './elevation.js';
-import { resample, analyzeRoad, segmentSustained, hardestClimbs, grindMask, longestIncline, SAMPLE_STEP } from './metrics.js';
+import { resample, analyzeRoad, segmentSustained, hardestClimbs, grindMask, longestInclinePaths, SAMPLE_STEP } from './metrics.js';
 import { initMap, drawRoads, renderList, setGrindStyle, setRampStyle, setWidthStyle, shortLabel } from './render.js';
 import { searchKey, cacheGet, cachePut } from './cache.js';
 import { buildCsv, csvFilename } from './csv.js';
@@ -157,24 +157,56 @@ const boxOverlap = (a, b) => a[0] <= b[1] && b[0] <= a[1] && a[2] <= b[3] && b[2
 
 // Re-rank and redraw from cached results (window-length / min-length / theme
 // changes don't refetch anything — the elevation profiles are kept per road).
+// A synthetic road spanning a (possibly multi-road) incline's exact extent: no
+// colored ribbon (segs null), its whole length flagged grind so it draws one
+// continuous amber underlay across the junctions it spans, and usable as the
+// halo target so highlighting hugs the incline instead of each whole road.
+function inclineVirtualRoad(incline, longLen) {
+    const n = incline.samples.length;
+    return {
+        id: `incline-${incline.start.lat.toFixed(5)},${incline.start.lon.toFixed(5)}`,
+        name: incline.roads.map(r => r.name).join(' + '), unnamed: false,
+        samples: incline.samples, elev: incline.elev,
+        pts: incline.samples.map(s => ({ lat: s.lat, lon: s.lon })),
+        segs: null, value: null, paint: null, topExtents: null, listed: false,
+        grind: n > 1 ? new Uint8Array(n - 1).fill(1) : null, grindSpan: longLen,
+    };
+}
+
 function render() {
     if (!state)
         return;
     const windowM = Math.max(SAMPLE_STEP, +byId('window').value || 250);
     const longLen = Math.max(SAMPLE_STEP * 2, +byId('longlen').value || 800);
     const listMax = Math.min(100, Math.max(1, +byId('listmax').value || 15));
+    const inclineRoads = Math.min(5, Math.max(1, +byId('inclineroads').value || 1));
     const rankMode = byId('rankmode').value;
-    let ranked = state.roads
-        .map(r => {
-            r.segs = segmentSustained(r.samples, r.elev, windowM);
-            r.value = r.segs ? r.segs.reduce((m, v) => Math.max(m, v), 0) : null;
-            r.paint = null;
-            r.topExtents = null;
-            r.listed = false; // set on sustained-mode roads that make the list (red vs violet)
-            return r;
-        })
-        .filter(r => r.value != null); // shorter-than-window roads have no value
-    let entries; // list rows: [{road, climb|null}]
+    const withFields = state.roads.map(r => {
+        r.segs = segmentSustained(r.samples, r.elev, windowM);
+        r.value = r.segs ? r.segs.reduce((m, v) => Math.max(m, v), 0) : null;
+        r.paint = null;
+        r.topExtents = null;
+        r.listed = false; // set on listed roads (they wear red on the map vs violet)
+        return r;
+    });
+    let ranked = withFields.filter(r => r.value != null); // shorter-than-window roads have no value
+    let entries; // list rows: [{road, climb|null} | {incline}]
+
+    // Long inclines, possibly spanning several connected roads (the "over N
+    // roads" knob), computed in EVERY mode so the amber underlay reflects it —
+    // not just the incline ranking. Cached per (length, roads) since it doesn't
+    // depend on the window or mode; the search uses the whole network (incl.
+    // short connectors), and each incline gets a virtual road carrying its
+    // continuous amber underlay (and, when hovered, the halo).
+    const inclineKey = `${longLen}:${inclineRoads}`;
+    if (state.inclineKey !== inclineKey) {
+        state.inclinePaths = longestInclinePaths(withFields, longLen, inclineRoads);
+        for (const inc of state.inclinePaths)
+            inc.virtual = inclineVirtualRoad(inc, longLen);
+        state.inclineKey = inclineKey;
+    }
+    const inclinePaths = state.inclinePaths;
+    const inclineVirtuals = inclinePaths.map(p => p.virtual);
     if (rankMode === 'climb') {
         // Climbs don't depend on the window; memoized until the next search.
         for (const r of ranked)
@@ -220,22 +252,11 @@ function render() {
             (e.road.topExtents ??= []).push([e.climb.i, e.climb.j]);
     }
     else if (rankMode === 'incline') {
-        // Rank by each road's longest qualifying long-incline (grind) run,
-        // using the same rule as the amber underlay. One row per road (deduped
-        // by name); the whole map still draws, with listed roads red.
-        for (const r of ranked)
-            r.incline = longestIncline(r.samples, r.elev, longLen);
-        entries = [];
-        const seen = new Set();
-        for (const r of ranked.filter(r => r.incline).sort((a, b) => b.incline.span - a.incline.span)) {
-            if (!r.unnamed && seen.has(r.name))
-                continue;
-            seen.add(r.name);
-            entries.push({ road: r, climb: null, incline: r.incline });
-            r.listed = true;
-            if (entries.length >= listMax)
-                break;
-        }
+        // Rank by longest qualifying long incline (same rule and knob as the
+        // amber underlay). Every road a listed incline touches wears red.
+        entries = inclinePaths.slice(0, listMax).map(incline => ({ incline }));
+        for (const { incline } of entries)
+            incline.roads.forEach(r => { r.listed = true; });
     }
     else {
         ranked.sort((a, b) => b.value - a.value);
@@ -266,13 +287,18 @@ function render() {
     }
 
     layer?.remove();
-    layer = drawRoads(map, ranked, windowM, mode(), rankMode);
+    // Virtual incline roads draw last so their amber sits over the real roads'.
+    layer = drawRoads(map, [...ranked, ...inclineVirtuals], windowM, mode(), rankMode);
     updateLegend(mode(), rankMode, entries.length);
 
     renderList(byId('road-list'), entries, mode(), {
         rankMode,
-        onHover: (entry, on) => layer.highlight(entry.road, on),
-        onClick: entry => layer.focus(entry.road, entry.climb ?? entry.incline),
+        onHover: (entry, on) => entry.incline
+            ? layer.highlightIncline(entry.incline, on)
+            : layer.highlight(entry.road, on),
+        onClick: entry => entry.incline
+            ? layer.focusIncline(entry.incline)
+            : layer.focus(entry.road, entry.climb),
     });
 
     downloadCtx = { entries, rankMode, windowM, filename: csvFilename(rankMode, windowM, state.label) };
@@ -283,7 +309,7 @@ function render() {
         sustained: `Steepest roads — sustained ${windowM} m`,
         incline: `Longest inclines — ${longLen}+ m`,
     }[rankMode];
-    const total = rankMode === 'incline' ? ranked.filter(r => r.incline).length : ranked.length;
+    const total = rankMode === 'incline' ? inclinePaths.length : ranked.length;
     const unit = rankMode === 'incline' ? `inclines ${longLen}+ m` : `roads ≥ ${windowM} m`;
     byId('list-sub').textContent = `${shortLabel(state.label)} · ${total.toLocaleString()} ${unit}`;
 
@@ -318,6 +344,7 @@ function updateHash(query) {
         r: String(+byId('radius').value),
         w: String(+byId('window').value),
         long: String(+byId('longlen').value),
+        roads: String(+byId('inclineroads').value),
         n: String(+byId('listmax').value),
         mode: byId('rankmode').value,
     });
@@ -349,6 +376,7 @@ const onControlChange = () => {
 };
 byId('window').addEventListener('change', onControlChange);
 byId('longlen').addEventListener('change', onControlChange);
+byId('inclineroads').addEventListener('change', onControlChange);
 byId('listmax').addEventListener('change', onControlChange);
 byId('rankmode').addEventListener('change', onControlChange);
 darkQuery.addEventListener('change', () => {
@@ -403,6 +431,8 @@ if (params.get('fixture')) {
             state = { roads: f.roads, center: f.center, radiusM: f.radiusM, label: f.center.label, cachedAt: null };
             if (['climb', 'sustained', 'incline'].includes(params.get('mode')))
                 byId('rankmode').value = params.get('mode');
+            if (params.get('roads'))
+                byId('inclineroads').value = params.get('roads');
             map.fitBounds(L.latLng(f.center.lat, f.center.lon).toBounds(f.radiusM * 2));
             render();
             // Optional close-up for inspecting a spot: #fixture=brevard&z=16&lat=..&lon=..
@@ -419,9 +449,11 @@ else if (params.get('q')) {
         byId('window').value = params.get('w');
     if (params.get('long'))
         byId('longlen').value = params.get('long');
+    if (params.get('roads'))
+        byId('inclineroads').value = params.get('roads');
     if (params.get('n'))
         byId('listmax').value = params.get('n');
-    if (['sustained', 'climb'].includes(params.get('mode')))
+    if (['sustained', 'climb', 'incline'].includes(params.get('mode')))
         byId('rankmode').value = params.get('mode');
     void run();
 }

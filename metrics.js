@@ -336,6 +336,165 @@ export function longestIncline(samples, elev, minSpan) {
     return best;
 }
 
+// --- Multi-road long inclines -------------------------------------------
+// A long incline can continue across a junction onto a differently-named road
+// (Burrell Mountain Rd -> Whitmire St). Build a junction graph from coincident
+// sample points, then do a bounded search over chained road slices (up to
+// maxRoads roads), running the same grind rule over each chain's combined
+// profile so an incline can span, and be reported across, several roads.
+
+const JOIN_TOL = 20; // m — roads connect where their sample points fall within this
+
+// For each road end, the (road, sampleIndex) points on OTHER roads that coincide
+// with it — roads meeting end-to-end or end-to-interior (a T-junction). A cheap
+// equirectangular meter grid keeps the lookup local.
+function endpointJunctions(roads) {
+    const lat0 = roads[0]?.samples[0]?.lat ?? 0;
+    const mLat = 111320, mLon = 111320 * Math.cos(lat0 * Math.PI / 180);
+    const X = p => p.lon * mLon, Y = p => p.lat * mLat;
+    const gkey = (x, y) => `${Math.round(x / JOIN_TOL)},${Math.round(y / JOIN_TOL)}`;
+    const grid = new Map();
+    for (const r of roads)
+        for (let k = 0; k < r.samples.length; k++) {
+            const p = r.samples[k], key = gkey(X(p), Y(p));
+            let cell = grid.get(key);
+            if (!cell)
+                grid.set(key, cell = []);
+            cell.push({ r, k, x: X(p), y: Y(p) });
+        }
+    const conns = new Map();
+    for (const r of roads) {
+        const ends = [0, r.samples.length - 1].map(end => {
+            const p = r.samples[end], px = X(p), py = Y(p);
+            const nearest = new Map(); // other road -> nearest {r, k, d}
+            for (let dx = -1; dx <= 1; dx++)
+                for (let dy = -1; dy <= 1; dy++)
+                    for (const q of grid.get(gkey(px + dx * JOIN_TOL, py + dy * JOIN_TOL)) ?? []) {
+                        if (q.r === r)
+                            continue;
+                        const d = Math.hypot(q.x - px, q.y - py);
+                        if (d <= JOIN_TOL && (!nearest.has(q.r) || d < nearest.get(q.r).d))
+                            nearest.set(q.r, { r: q.r, k: q.k, d });
+                    }
+            return [...nearest.values()];
+        });
+        conns.set(r, ends);
+    }
+    return conns;
+}
+
+// Concatenate an ordered list of road slices { r, from, to } (from>to means the
+// road is traversed backwards) into one profile: fresh cumulative distance from
+// the real coordinates, plus a provenance entry per sample mapping back to its
+// road and index.
+function combineSteps(steps) {
+    const pts = [], elev = [], prov = [];
+    for (const s of steps) {
+        const dir = s.to >= s.from ? 1 : -1;
+        for (let k = s.from; dir > 0 ? k <= s.to : k >= s.to; k += dir) {
+            pts.push(s.r.samples[k]);
+            elev.push(s.r.elev[k]);
+            prov.push({ r: s.r, k });
+        }
+    }
+    const samples = [{ lat: pts[0].lat, lon: pts[0].lon, d: 0 }];
+    let d = 0;
+    for (let i = 1; i < pts.length; i++) {
+        d += haversine(pts[i - 1], pts[i]);
+        samples.push({ lat: pts[i].lat, lon: pts[i].lon, d });
+    }
+    return { samples, elev, prov };
+}
+
+// Rank the longest qualifying long inclines across the road network, each
+// possibly spanning up to maxRoads connected roads. Returns them longest-first,
+// de-duplicated so no road (or road name) appears in two reported inclines.
+// maxRoads = 1 reproduces the single-road ranking. Each result:
+//   { span, gain, grade, roads:[...], segs:[{r,from,to}], path:[[lat,lon]...],
+//     start:{lat,lon,elev}, end:{lat,lon,elev} }
+export function longestInclinePaths(roads, minSpan, maxRoads = 1) {
+    const junc = maxRoads > 1 ? endpointJunctions(roads) : null;
+    const found = [];
+
+    const evaluate = steps => {
+        const { samples, elev, prov } = combineSteps(steps);
+        const inc = longestIncline(samples, elev, minSpan);
+        if (!inc)
+            return;
+        const segs = [];
+        for (let k = inc.i; k <= inc.j; k++) {
+            const { r, k: idx } = prov[k];
+            const last = segs[segs.length - 1];
+            if (last && last.r === r)
+                last.to = idx;
+            else
+                segs.push({ r, from: idx, to: idx });
+        }
+        const point = k => ({ lat: prov[k].r.samples[prov[k].k].lat, lon: prov[k].r.samples[prov[k].k].lon, elev: elev[k] });
+        const bottom = elev[inc.i] <= elev[inc.j] ? inc.i : inc.j;
+        // The incline's own extent as a standalone profile (distance re-zeroed),
+        // so callers can build a "virtual road" for it — one continuous amber
+        // underlay and halo across the junctions it spans.
+        const profSamples = [], profElev = [];
+        for (let k = inc.i; k <= inc.j; k++) {
+            profSamples.push({ lat: samples[k].lat, lon: samples[k].lon, d: samples[k].d - samples[inc.i].d });
+            profElev.push(elev[k]);
+        }
+        found.push({
+            span: inc.span, gain: inc.gain, grade: inc.grade,
+            roads: [...new Set(segs.map(s => s.r))],
+            segs,
+            samples: profSamples, elev: profElev,
+            path: profSamples.map(s => [s.lat, s.lon]),
+            start: point(bottom), end: point(bottom === inc.i ? inc.j : inc.i),
+        });
+    };
+
+    const dfs = (steps, roadSet, depth) => {
+        evaluate(steps);
+        if (!junc || depth >= maxRoads)
+            return;
+        const last = steps[steps.length - 1];
+        const which = last.to === 0 ? 0 : 1; // the endpoint we arrived at
+        for (const c of junc.get(last.r)[which]) {
+            if (roadSet.has(c.r))
+                continue;
+            for (const to of [0, c.r.samples.length - 1]) {
+                if (to === c.k)
+                    continue; // empty slice
+                steps.push({ r: c.r, from: c.k, to });
+                roadSet.add(c.r);
+                dfs(steps, roadSet, depth + 1);
+                roadSet.delete(c.r);
+                steps.pop();
+            }
+        }
+    };
+
+    for (const r of roads) {
+        const last = r.samples.length - 1;
+        if (last < 1)
+            continue;
+        dfs([{ r, from: 0, to: last }], new Set([r]), 1);
+        if (junc) // the reverse orientation extends off the other end
+            dfs([{ r, from: last, to: 0 }], new Set([r]), 1);
+    }
+
+    found.sort((a, b) => b.span - a.span);
+    const picked = [], usedRoads = new Set(), usedNames = new Set();
+    for (const inc of found) {
+        if (inc.roads.some(r => usedRoads.has(r)))
+            continue;
+        const names = inc.roads.filter(r => !r.unnamed).map(r => r.name);
+        if (names.some(n => usedNames.has(n)))
+            continue;
+        picked.push(inc);
+        inc.roads.forEach(r => usedRoads.add(r));
+        names.forEach(n => usedNames.add(n));
+    }
+    return picked;
+}
+
 // Extend the reported extent over adjacent climbing at least this steep. The top
 // (end of the climb in the travel direction) uses a gentler threshold than the
 // bottom, since a slight rise feels tougher late in a long climb.
