@@ -848,23 +848,19 @@ export function drawRoads(map, ranked, windowM, mode, rankMode = 'sustained') {
                 // the mitered ring. The ring carries the altitude taper but self-
                 // crosses into a pinched neck where a wiggly centerline turns
                 // tighter than the flare is wide; a stroke can't self-cross (round
-                // joins), so it backfills those necks. Its weight tracks the
-                // chunk's (near-constant) full width so it fills necks fully yet
-                // stays within the tapered ring elsewhere. Pixel weight, so it's
-                // recomputed on zoom.
+                // joins), so it backfills those necks. Weight is twice the chunk's
+                // narrowest half-width, so it fills necks yet stays within the
+                // tapered ring. It spans only its own chunk (butt caps, no reach
+                // into neighbors): reaching a vertex into a much narrower neighbor
+                // poked a colored sliver out beside that neighbor's ribbon. Pixel
+                // weight, recomputed on zoom.
                 const bodyWeight = zoom => {
                     let w = Infinity;
                     for (let i = iStart; i <= iEnd; i++)
                         w = Math.min(w, widthAt(dp.verts[i], zoom));
                     return 2 * w;
                 };
-                // Extend one vertex into each neighbor so adjacent chunks' bodies
-                // overlap and fill a neck that lands on a color boundary; the ring
-                // on top hides the one-segment color overlap.
-                const bStart = Math.max(0, iStart - 1), bEnd = Math.min(dp.verts.length - 1, iEnd + 1);
-                const body = L.polyline(dp.verts.slice(bStart, bEnd + 1).map(v => [v.lat, v.lon]), {
-                    // Round joins kill the bowtie at internal bends; butt caps end
-                    // the chunk flush so adjacent colors don't bulge into beads.
+                const body = L.polyline(dp.verts.slice(iStart, iEnd + 1).map(v => [v.lat, v.lon]), {
                     color: c, weight: bodyWeight(geom.zoom), opacity: 1, lineJoin: 'round', lineCap: 'butt', interactive: false,
                 }).addTo(fg);
                 const poly = L.polygon(ribbonRing(geom, dp.verts, iStart, iEnd, widthAt, RIBBON_MITER_MAX), {
