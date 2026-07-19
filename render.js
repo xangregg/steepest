@@ -636,6 +636,49 @@ export function drawRoads(map, ranked, windowM, mode, rankMode = 'sustained') {
     // Hover glow color: a dark casing on the light basemap, a light one on dark.
     const haloColor = mode === 'dark' ? '#40d4a6' : '#009966';
 
+    // Off-screen indicator: an arrow pinned at the viewport edge pointing toward
+    // a hovered road that's fully out of view. Hovering the ranked list must not
+    // pan the map (too heavy a side effect for a mouseover), so this points the
+    // way instead. Same teal as the halo, so both read as "the hovered road."
+    const ARROW_INSET = 34; // px the arrow sits in from the viewport edge
+    const arrow = L.DomUtil.create('div', 'offscreen-arrow', map.getContainer());
+    // A shaft + head (not a bare triangle) so the pointing direction is obvious.
+    arrow.innerHTML = `<svg width="44" height="24" viewBox="0 0 44 24"><path d="M3 9 H26 V3 L42 12 L26 21 V15 H3 Z" fill="${haloColor}"/></svg>`;
+    Object.assign(arrow.style, {
+        position: 'absolute', left: '0', top: '0', width: '44px', height: '24px',
+        zIndex: '700', pointerEvents: 'none', display: 'none',
+        filter: 'drop-shadow(0 0 2px rgba(0,0,0,.55))',
+    });
+    let arrowRoad = null;
+
+    function updateArrow() {
+        if (!arrowRoad) {
+            arrow.style.display = 'none';
+            return;
+        }
+        const bounds = L.latLngBounds(arrowRoad.samples.map(s => [s.lat, s.lon]));
+        if (map.getBounds().intersects(bounds)) {
+            // Any part of the road is visible — the halo already marks it.
+            arrow.style.display = 'none';
+            return;
+        }
+        const size = map.getSize(), center = size.divideBy(2);
+        const target = map.latLngToContainerPoint(bounds.getCenter());
+        const dx = target.x - center.x, dy = target.y - center.y;
+        if (!dx && !dy)
+            return;
+        // Clamp the ray from view center toward the road to the inset rectangle.
+        const t = Math.min(
+            dx ? (center.x - ARROW_INSET) / Math.abs(dx) : Infinity,
+            dy ? (center.y - ARROW_INSET) / Math.abs(dy) : Infinity);
+        arrow.style.display = '';
+        arrow.style.left = `${center.x + dx * t}px`;
+        arrow.style.top = `${center.y + dy * t}px`;
+        arrow.style.transform = `translate(-50%, -50%) rotate(${Math.atan2(dy, dx)}rad)`;
+    }
+    // Keep the arrow correct if the map moves while a row stays hovered.
+    map.on('move zoom', updateArrow);
+
     function setHighlight(road, on) {
         const e = lines.get(road);
         if (!e)
@@ -662,6 +705,8 @@ export function drawRoads(map, ranked, windowM, mode, rankMode = 'sustained') {
                 poly.setStyle({ opacity: on ? 1 : 0, fillOpacity: 1 });
             }
         }
+        arrowRoad = on ? road : null;
+        updateArrow();
     }
 
     for (const road of [...ranked].reverse()) {
@@ -885,6 +930,8 @@ export function drawRoads(map, ranked, windowM, mode, rankMode = 'sustained') {
         },
         remove() {
             map.off('zoomend', rebuild);
+            map.off('move zoom', updateArrow);
+            arrow.remove();
             map.removeLayer(group);
         },
     };
