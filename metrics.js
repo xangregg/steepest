@@ -1,6 +1,6 @@
 // Road profile math: arc-length resampling, bridge/tunnel deck elevations,
-// smoothing, sustained-window grades, hardest-climb extraction, and
-// long-incline masking. Conventions: grades are fractions (0.08 = 8 %),
+// DEM-artifact despiking, smoothing, sustained-window grades, hardest-climb
+// extraction, and long-incline masking. Conventions: grades are fractions (0.08 = 8 %),
 // distances are meters, and elevations are smoothed before any metric runs.
 // Length thresholds snap to the nearest whole ~SAMPLE_STEP segment.
 
@@ -96,6 +96,59 @@ function deckElevations(samples, elevs) {
     return out;
 }
 
+// A drivable road never exceeds ~37% (Ffordd Pen Llech, briefly the world's
+// steepest street); a steeper "segment" is a DEM artifact — most often a seam
+// between source datasets that a road weaves across, reading tens of metres too
+// high or low on one side. Any segment beyond this is impossible, i.e. bad data.
+const MAX_GRADE_PLAUSIBLE = 0.60;
+// Farthest such an artifact excursion is bridged across (a road can dip into and
+// back out of a bad-data strip over a short span); longer runs fall back to a
+// per-edge cap.
+const MAX_EXCURSION_M = 250;
+
+// Repair impossible (> MAX_GRADE_PLAUSIBLE) elevation jumps left by DEM errors.
+// A dataset seam a road crosses shows up as a spike or trench bounded by two
+// impossible jumps that returns to the surrounding level: the road can't really
+// jump there, so the consistent ground on both sides is the truth and the short
+// excursion between is bad data — interpolate straight across it, exactly as a
+// bridge deck spans a gorge. A lone jump with no matching return (a one-sided
+// step, where which side is wrong is genuinely ambiguous) is instead capped at
+// the plausible max, shifting the rest so the road's shape past it is kept.
+function despike(elevs, samples) {
+    const n = samples.length;
+    const out = Array.from(elevs);
+    const grade = i => Math.abs(out[i + 1] - out[i]) / (samples[i + 1].d - samples[i].d);
+    let i = 0;
+    while (i < n - 1) {
+        if (grade(i) <= MAX_GRADE_PLAUSIBLE) {
+            i++;
+            continue;
+        }
+        // Impossible jump between samples i and i+1: look for the return jump
+        // that closes a short excursion back to a level consistent with sample i.
+        let j = i + 1;
+        while (j < n - 1 && samples[j + 1].d - samples[i].d <= MAX_EXCURSION_M && grade(j) <= MAX_GRADE_PLAUSIBLE)
+            j++;
+        const span = samples[Math.min(j + 1, n - 1)].d - samples[i].d;
+        const closes = j < n - 1 && grade(j) > MAX_GRADE_PLAUSIBLE && span <= MAX_EXCURSION_M
+            && Math.abs(out[j + 1] - out[i]) <= MAX_GRADE_PLAUSIBLE * span;
+        if (closes) {
+            const d0 = samples[i].d;
+            for (let k = i + 1; k <= j; k++)
+                out[k] = out[i] + (out[j + 1] - out[i]) * (samples[k].d - d0) / span;
+            i = j + 1;
+        }
+        else {
+            const dist = samples[i + 1].d - samples[i].d;
+            const shift = out[i] + Math.sign(out[i + 1] - out[i]) * MAX_GRADE_PLAUSIBLE * dist - out[i + 1];
+            for (let k = i + 1; k < n; k++)
+                out[k] += shift;
+            i++;
+        }
+    }
+    return out;
+}
+
 // 3-point moving average to tame elevation-model jitter.
 function smooth(elevs) {
     return elevs.map((e, i) => {
@@ -107,7 +160,7 @@ function smooth(elevs) {
 // samples + raw elevations -> per-road basics, keeping the smoothed elevation
 // profile so sustainedGrade() can be re-queried cheaply for any window length.
 export function analyzeRoad(samples, elevs) {
-    const elev = smooth(deckElevations(samples, elevs));
+    const elev = smooth(despike(deckElevations(samples, elevs), samples));
     let eMin = Infinity, eMax = -Infinity;
     for (const v of elev) {
         eMin = Math.min(eMin, v);

@@ -248,8 +248,10 @@ assert(joined.length === 1 && joined[0].roads.length === 2 && joined[0].span > 1
 assert(Math.abs(joined[0].grade - 0.05) < 0.01, `combined incline grade ~5% (${joined[0] && (joined[0].grade * 100).toFixed(1)}%)`);
 assert(joined[0].start.elev < joined[0].end.elev, 'incline start is the low end');
 
-// Bridge interpolation: a 5% road crossing a 40 m-deep gorge on a bridge
-// (middle third flagged b) must read ~5%, not a cliff.
+// Bridge interpolation: a 5% road crossing a ~40 m-deep valley on a bridge
+// (middle third flagged b) must read ~5%, not a cliff. The valley is a gradual
+// (< impossible-grade) dip, so it isolates the bridge flag — despiking leaves it
+// alone, unlike a sheer DEM-artifact cliff (tested separately below).
 const ptsB = [
     { lat: 35, lon: -82.7 },
     { lat: 35.003, lon: -82.7, b: true },
@@ -258,7 +260,9 @@ const ptsB = [
 ];
 const bs = resample(ptsB);
 assert(bs.some(s => s.b) && !bs[0].b && !bs[bs.length - 1].b, 'resample carries bridge flags');
-const gorge = bs.map(s => s.d * 0.05 - (s.b ? 40 : 0));
+const bd = bs.filter(s => s.b).map(s => s.d);
+const bLo = Math.min(...bd), bHi = Math.max(...bd), bMid = (bLo + bHi) / 2;
+const gorge = bs.map(s => s.d * 0.05 - (s.d >= bLo && s.d <= bHi ? 40 * (1 - Math.abs(s.d - bMid) / (bMid - bLo)) : 0));
 const withFix = sustainedGrade(bs, analyzeRoad(bs, gorge).elev, 100);
 const noFlags = resample(ptsB.map(({ lat, lon }) => ({ lat, lon })));
 const withoutFix = sustainedGrade(noFlags, analyzeRoad(noFlags, gorge).elev, 100);
@@ -270,5 +274,27 @@ const allBridge = resample([{ lat: 35, lon: -82.6, b: true }, { lat: 35.009, lon
 const valley = allBridge.map(s => 100 + s.d * 0.02 - (s.d > 200 && s.d < 800 ? 35 : 0));
 const deck = sustainedGrade(allBridge, analyzeRoad(allBridge, valley).elev, 100);
 assert(deck < 0.03, `all-bridge chain reads as its deck: ${(deck * 100).toFixed(1)}%`);
+
+// DEM seam despiking: a real Fonllech Hir profile (Harlech) crosses a ~92 m
+// step artifact in the terrarium tiles, so a weaving road reads ~243 m, dips
+// into a bogus ~150 m "trench" for a few samples, then back to ~243 m — an
+// impossible ~370 % edge. Despiking must bridge the trench back to ~243 m, not
+// report a 120 %+ cliff; a genuine gentle road elsewhere must be untouched.
+const seam = resample([{ lat: 52.858, lon: -4.083 }, { lat: 52.8525, lon: -4.093 }]); // ~800 m
+const sMid = Math.floor(seam.length / 2);
+const seamRaw = seam.map((s, i) => Math.abs(i - sMid) <= 2 ? 152 : 243); // 5-sample trench
+const seamElev = analyzeRoad(seam, seamRaw).elev;
+let seamMax = 0;
+for (let i = 1; i < seam.length; i++)
+    seamMax = Math.max(seamMax, Math.abs(seamElev[i] - seamElev[i - 1]) / (seam[i].d - seam[i - 1].d));
+assert(seamMax < 0.60, `seam trench despiked: max grade ${(seamMax * 100).toFixed(0)}% (raw ~370%)`);
+assert(seamElev[sMid] > 220, `trench bridged to the surrounding ~243 m, not 152 (got ${seamElev[sMid].toFixed(0)} m)`);
+// A lone one-sided step can't be disambiguated, so it's capped, not bridged.
+const stepRaw = seam.map((s, i) => i < sMid ? 243 : 152);
+const stepElev = analyzeRoad(seam, stepRaw).elev;
+let stepMax = 0;
+for (let i = 1; i < seam.length; i++)
+    stepMax = Math.max(stepMax, Math.abs(stepElev[i] - stepElev[i - 1]) / (seam[i].d - seam[i - 1].d));
+assert(stepMax <= 0.61, `lone step capped at the plausible max (${(stepMax * 100).toFixed(0)}%)`);
 
 console.log('PASS (unit)');
