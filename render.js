@@ -645,13 +645,17 @@ export function drawRoads(map, ranked, windowM, mode, rankMode = 'sustained') {
         for (const h of e.haloPolys)
             h.poly.setStyle({ fillOpacity: on ? 1 : 0 });
         const emphasizeClimb = isClimbMode && road.topExtents?.length;
-        for (const { poly, prominent, isGrind } of e.chunks) {
+        for (const { poly, body, prominent, isGrind } of e.chunks) {
             if (isGrind) {
                 // Hover fattens the outline; the pane keeps it translucent.
                 poly.setStyle({ opacity: on ? 1 : 0, fillOpacity: 1 });
             }
             else if (emphasizeClimb && !prominent) {
+                // De-emphasize on hover; hide the centerline body underlay so the
+                // dim reads at full strength (a faint neck may show on the
+                // receding chunk, which is fine).
                 poly.setStyle({ opacity: 0, fillOpacity: on ? 0.45 : 1 });
+                body?.setStyle({ opacity: on ? 0 : 1 });
             }
             else {
                 // The outline stroke (same color) fattens the ribbon when shown.
@@ -786,6 +790,29 @@ export function drawRoads(map, ranked, windowM, mode, rankMode = 'sustained') {
             for (const chunk of run.items) {
                 const c = (run.prominent ? color : colorAlt)(chunk.paint);
                 const iStart = dp.sampleIdx[chunk.kStart], iEnd = dp.sampleIdx[chunk.kEnd];
+                // Round-join centerline stroke in the chunk color, drawn beneath
+                // the mitered ring. The ring carries the altitude taper but self-
+                // crosses into a pinched neck where a wiggly centerline turns
+                // tighter than the flare is wide; a stroke can't self-cross (round
+                // joins), so it backfills those necks. Its weight tracks the
+                // chunk's (near-constant) full width so it fills necks fully yet
+                // stays within the tapered ring elsewhere. Pixel weight, so it's
+                // recomputed on zoom.
+                const bodyWeight = zoom => {
+                    let w = Infinity;
+                    for (let i = iStart; i <= iEnd; i++)
+                        w = Math.min(w, widthAt(dp.verts[i], zoom));
+                    return 2 * w;
+                };
+                // Extend one vertex into each neighbor so adjacent chunks' bodies
+                // overlap and fill a neck that lands on a color boundary; the ring
+                // on top hides the one-segment color overlap.
+                const bStart = Math.max(0, iStart - 1), bEnd = Math.min(dp.verts.length - 1, iEnd + 1);
+                const body = L.polyline(dp.verts.slice(bStart, bEnd + 1).map(v => [v.lat, v.lon]), {
+                    // Round joins kill the bowtie at internal bends; butt caps end
+                    // the chunk flush so adjacent colors don't bulge into beads.
+                    color: c, weight: bodyWeight(geom.zoom), opacity: 1, lineJoin: 'round', lineCap: 'butt', interactive: false,
+                }).addTo(fg);
                 const poly = L.polygon(ribbonRing(geom, dp.verts, iStart, iEnd, widthAt, RIBBON_MITER_MAX), {
                     // Opaque fill: semi-transparent neighbors blend with the
                     // basemap at antialiased seam edges and show hairlines.
@@ -795,7 +822,7 @@ export function drawRoads(map, ranked, windowM, mode, rankMode = 'sustained') {
                 });
                 wirePopup(poly, chunk.value);
                 poly.addTo(fg);
-                chunks.push({ poly, prominent: run.prominent, kStart: chunk.kStart, kEnd: chunk.kEnd, paintVal: chunk.paint, iStart, iEnd, widthAt });
+                chunks.push({ poly, body, bodyWeight, prominent: run.prominent, kStart: chunk.kStart, kEnd: chunk.kEnd, paintVal: chunk.paint, iStart, iEnd, widthAt });
                 if (!steepest || chunk.paint > steepest.chunkPaint) {
                     steepest = poly;
                     steepest.chunkPaint = chunk.paint;
@@ -822,6 +849,9 @@ export function drawRoads(map, ranked, windowM, mode, rankMode = 'sustained') {
                 const ring = ribbonRing(geom, e.dp.verts, c.iStart, c.iEnd, c.widthAt, RIBBON_MITER_MAX);
                 c.poly.setLatLngs(ring);
                 c.hit?.setLatLngs(ring);
+                // c.body follows fixed latlngs (Leaflet reprojects on zoom); only
+                // its pixel weight tracks the flare, so refresh that.
+                c.body?.setStyle({ weight: c.bodyWeight(geom.zoom) });
             }
         }
     };
