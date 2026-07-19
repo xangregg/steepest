@@ -38,10 +38,12 @@ for (const r of roads) {
     offset += r.samples.length;
 }
 
-// Same fields the cache keeps, coordinates rounded to ~0.1 m to shrink the file.
-const r5 = v => Math.round(v * 1e5) / 1e5;
+// Same fields the cache keeps. Coordinates rounded to 6 decimals (~0.1 m) to
+// shrink the file — 5 decimals (~1 m) jittered the centerline enough to make the
+// ribbon neck/spike on the fixture where full-precision live data doesn't.
+const r6 = v => Math.round(v * 1e6) / 1e6;
 const r2 = v => Math.round(v * 100) / 100;
-const pt = p => (p.b ? { lat: r5(p.lat), lon: r5(p.lon), b: true } : { lat: r5(p.lat), lon: r5(p.lon) });
+const pt = p => (p.b ? { lat: r6(p.lat), lon: r6(p.lon), b: true } : { lat: r6(p.lat), lon: r6(p.lon) });
 const fixture = {
     center: { lat: center.lat, lon: center.lon, label: center.label },
     radiusM,
