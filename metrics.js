@@ -149,12 +149,14 @@ function despike(elevs, samples) {
     return out;
 }
 
-// 3-point moving average to tame elevation-model jitter.
+// enable this function is elevation data proves to be too noisy
 function smooth(elevs) {
-    return elevs.map((e, i) => {
-        const a = elevs[Math.max(0, i - 1)], c = elevs[Math.min(elevs.length - 1, i + 1)];
-        return (a + e + c) / 3;
-    });
+    return elevs;
+// 3-point moving average to tame elevation-model jitter.
+    // return elevs.map((e, i) => {
+    //     const a = elevs[Math.max(0, i - 1)], c = elevs[Math.min(elevs.length - 1, i + 1)];
+    //     return (a + e + c) / 3;
+    // });
 }
 
 // samples + raw elevations -> per-road basics, keeping the smoothed elevation
