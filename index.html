@@ -19,6 +19,7 @@
                 <h1>Steepest road in town</h1>
                 <div class="title-links">
                     <button type="button" id="howto" class="repo-link link-btn" aria-haspopup="dialog">How to read</button>
+                    <button type="button" id="credits" class="repo-link link-btn" aria-haspopup="dialog">Credits</button>
                     <a class="repo-link" href="https://github.com/xangregg/steepest">Source on GitHub</a>
                 </div>
             </div>
@@ -78,7 +79,7 @@
         </div>
     </aside>
 </main>
-<dialog id="howto-dialog" aria-labelledby="howto-title">
+<dialog id="howto-dialog" class="info-dialog" aria-labelledby="howto-title">
     <form method="dialog"><button class="dialog-close" aria-label="Close">×</button></form>
     <h2 id="howto-title">How to read this map</h2>
     <ul>
@@ -93,6 +94,28 @@
         <li><b>Click any road segment</b> for its detailed grade and elevation data.</li>
     </ul>
     <p class="fine-print">Elevations come from ~10–30 m DEM data, so short-segment grades are approximate — longer sustained lengths resist that noise.</p>
+</dialog>
+<dialog id="credits-dialog" class="info-dialog" aria-labelledby="credits-title">
+    <form method="dialog"><button class="dialog-close" aria-label="Close">×</button></form>
+    <h2 id="credits-title">Credits &amp; data attribution</h2>
+    <ul>
+        <li><b>Roads &amp; place search</b> — © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, under the ODbL. Roads via the <a href="https://overpass-api.de/">Overpass API</a>; geocoding via <a href="https://nominatim.org/">Nominatim</a>.</li>
+        <li><b>Basemap</b> — © <a href="https://carto.com/attributions">CARTO</a>, © OpenStreetMap contributors.</li>
+        <li><b>Elevation</b> — <a href="https://registry.opendata.aws/terrain-tiles/">Terrain Tiles</a> (Tilezen / Joerd) on AWS, an <a href="https://github.com/tilezen/joerd/blob/master/docs/attribution.md">assembly of open data sources</a> whose attributions this list carries in full:</li>
+    </ul>
+    <ul class="attr-sources">
+        <li>ArcticDEM terrain data DEM(s) were created from DigitalGlobe, Inc., imagery and funded under National Science Foundation awards 1043681, 1559691, and 1542736.</li>
+        <li>Australia terrain data © Commonwealth of Australia (Geoscience Australia) 2017.</li>
+        <li>Austria terrain data © offene Daten Österreichs – Digitales Geländemodell (DGM) Österreich.</li>
+        <li>Canada terrain data contains information licensed under the Open Government Licence – Canada.</li>
+        <li>Europe terrain data produced using Copernicus data and information funded by the European Union - EU-DEM layers.</li>
+        <li>Global ETOPO1 terrain data U.S. National Oceanic and Atmospheric Administration.</li>
+        <li>Mexico terrain data source: INEGI, Continental relief, 2016.</li>
+        <li>New Zealand terrain data Copyright 2011 Crown copyright (c) Land Information New Zealand and the New Zealand Government (All rights reserved).</li>
+        <li>Norway terrain data © Kartverket.</li>
+        <li>United Kingdom terrain data © Environment Agency copyright and/or database right 2015. All rights reserved.</li>
+        <li>United States 3DEP (formerly NED) and global GMTED2010 and SRTM terrain data courtesy of the U.S. Geological Survey.</li>
+    </ul>
 </dialog>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
         integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>

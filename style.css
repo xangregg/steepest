@@ -74,7 +74,7 @@ body {
     color: var(--ink);
 }
 
-#howto-dialog {
+.info-dialog {
     max-width: 34rem;
     width: calc(100% - 32px);
     border: 1px solid var(--border);
@@ -84,10 +84,10 @@ body {
     color: var(--ink);
     box-shadow: 0 12px 44px rgba(0, 0, 0, 0.28);
 }
-#howto-dialog::backdrop {
+.info-dialog::backdrop {
     background: rgba(0, 0, 0, 0.4);
 }
-#howto-dialog form {
+.info-dialog form {
     display: flex;
     justify-content: flex-end;
 }
@@ -104,12 +104,12 @@ body {
 .dialog-close:hover {
     color: var(--ink);
 }
-#howto-dialog h2 {
+.info-dialog h2 {
     margin: 0 0 12px;
     font-size: 1.1rem;
     font-weight: 650;
 }
-#howto-dialog ul {
+.info-dialog ul {
     margin: 0;
     padding-left: 1.1em;
     display: flex;
@@ -119,26 +119,41 @@ body {
     line-height: 1.45;
     color: var(--ink-2);
 }
-#howto-dialog li b {
+.info-dialog li b {
     color: var(--ink);
     font-weight: 620;
 }
-#howto-dialog .fine-print {
+.info-dialog .fine-print {
     margin: 14px 0 0;
 }
+/* The Terrain Tiles source list: each provider's required attribution string,
+   small and muted since it's legal boilerplate. */
+.attr-sources {
+    margin: 14px 0 0;
+    padding: 12px 0 0 1.1em;
+    border-top: 1px solid var(--hairline);
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    font-size: 0.76rem;
+    line-height: 1.4;
+    color: var(--muted);
+    max-height: 40vh;
+    overflow-y: auto;
+}
 /* Ranking modes as a 2-column table: term | description, one row per mode. */
-#howto-dialog dl {
+.info-dialog dl {
     display: grid;
     grid-template-columns: max-content 1fr;
     gap: 3px 14px;
     margin: 5px 0 2px;
 }
-#howto-dialog dt {
+.info-dialog dt {
     font-style: italic;
     color: var(--ink);
     white-space: nowrap;
 }
-#howto-dialog dd {
+.info-dialog dd {
     margin: 0;
 }
 /* #controls = search (place/radius/go) in the map panel, laid out in a row;

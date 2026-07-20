@@ -365,14 +365,18 @@ function downloadCsv() {
 }
 byId('download').addEventListener('click', downloadCsv);
 
-// "How to read" help dialog (native <dialog>: the × and Esc close it; also close
-// on a backdrop click, whose event target is the dialog element itself).
-const howtoDialog = byId('howto-dialog');
-byId('howto').addEventListener('click', () => howtoDialog.showModal());
-howtoDialog.addEventListener('click', e => {
-    if (e.target === howtoDialog)
-        howtoDialog.close();
-});
+// Info dialogs (native <dialog>: the × and Esc close them; also close on a
+// backdrop click, whose event target is the dialog element itself).
+const wireDialog = (buttonId, dialogId) => {
+    const dialog = byId(dialogId);
+    byId(buttonId).addEventListener('click', () => dialog.showModal());
+    dialog.addEventListener('click', e => {
+        if (e.target === dialog)
+            dialog.close();
+    });
+};
+wireDialog('howto', 'howto-dialog');
+wireDialog('credits', 'credits-dialog');
 
 byId('controls').addEventListener('submit', e => {
     e.preventDefault();
