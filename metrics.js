@@ -1,7 +1,8 @@
 // Road profile math: arc-length resampling, bridge/tunnel deck elevations,
-// DEM-artifact despiking, smoothing, sustained-window grades, hardest-climb
-// extraction, and long-incline masking. Conventions: grades are fractions (0.08 = 8 %),
-// distances are meters, and elevations are smoothed before any metric runs.
+// DEM-artifact despiking, optional smoothing, sustained-window grades,
+// hardest-climb extraction, and long-incline masking. Conventions: grades are
+// fractions (0.08 = 8 %), distances are meters, and elevations are corrected
+// (deck-interpolated, then despiked) before any metric runs.
 // Length thresholds snap to the nearest whole ~SAMPLE_STEP segment.
 
 export const SAMPLE_STEP = 25;      // m between elevation samples along a road
@@ -149,17 +150,19 @@ function despike(elevs, samples) {
     return out;
 }
 
-// enable this function is elevation data proves to be too noisy
+// Optional 3-point moving average to tame elevation-model jitter. Disabled for
+// now (passes the profile through unchanged) so short, extreme pitches aren't
+// flattened — the bilinear DEM sampling already smooths somewhat. Re-enable the
+// averaging below if the raw data proves too noisy.
 function smooth(elevs) {
     return elevs;
-// 3-point moving average to tame elevation-model jitter.
     // return elevs.map((e, i) => {
     //     const a = elevs[Math.max(0, i - 1)], c = elevs[Math.min(elevs.length - 1, i + 1)];
     //     return (a + e + c) / 3;
     // });
 }
 
-// samples + raw elevations -> per-road basics, keeping the smoothed elevation
+// samples + raw elevations -> per-road basics, keeping the corrected elevation
 // profile so sustainedGrade() can be re-queried cheaply for any window length.
 export function analyzeRoad(samples, elevs) {
     const elev = smooth(despike(deckElevations(samples, elevs), samples));

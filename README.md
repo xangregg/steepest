@@ -30,8 +30,11 @@ Code and docs were largely written using Claude Code (Fable 5 and Opus 4.8).
 3. **Elevation** — each road is resampled every ~25 m, and elevations come from
    [AWS Terrain Tiles](https://registry.opendata.aws/terrain-tiles/)
    (Mapzen terrarium PNGs, decoded pixel-by-pixel in a canvas — free, global,
-   no API key). Elevations get a 3-point moving average to tame noise in the
-   digital elevation model (DEM).
+   no API key), sampled bilinearly. Impossible grade jumps — steeper than any
+   real road, from a DEM dataset seam a road weaves across — are detected and
+   interpolated across (like a bridge deck). A 3-point moving average to further
+   tame digital-elevation-model (DEM) noise is available but currently off, to
+   keep short, steep pitches at their full grade.
 4. **Metrics** — three ranking modes:
    - **Steepest** (default): the best average grade a road holds over any
      stretch of the chosen length (default 250 m). The length is a numeric
