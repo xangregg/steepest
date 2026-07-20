@@ -962,7 +962,10 @@ export function renderList(el, entries, mode, { rankMode = 'sustained', onHover,
     const isClimb = rankMode === 'climb', isIncline = rankMode === 'incline';
     const rankVal = e => isClimb ? e.climb.score : isIncline ? e.incline.span : e.road.value;
     const grade = e => isClimb ? e.climb.grade : isIncline ? e.incline.grade : e.road.value;
-    const subOf = e => isClimb ? fmtClimb(e.climb) : isIncline ? fmtIncline(e.incline) : fmtLen(e.road.length);
+    // Climb string when a climb is attached (climb mode, and Steepest mode where
+    // the road's hardest climb rides along); incline stats in incline mode; road
+    // length only as a last resort (a road with no qualifying climb).
+    const subOf = e => isIncline ? fmtIncline(e.incline) : e.climb ? fmtClimb(e.climb) : fmtLen(e.road.length);
     const valueOf = e => isClimb ? e.climb.score.toFixed(1) : isIncline ? fmtLen(e.incline.span) : fmtPct(e.road.value);
     // An incline may span several roads; name it by all of them joined.
     const fullName = e => isIncline ? e.incline.roads.map(r => r.name).join(' + ') : e.road.name;

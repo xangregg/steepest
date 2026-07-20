@@ -270,7 +270,12 @@ function render() {
             if (!r.unnamed && seen.has(r.name))
                 continue;
             seen.add(r.name);
-            entries.push({ road: r, climb: null });
+            // Carry the road's hardest climb for the list sub-line — its rise and
+            // length say more than the (whole-road) length did. The bar and the
+            // right-hand % still reflect the sustained ranking; the climb is
+            // display-only here (see onClick, which frames the road, not the climb).
+            const climb = (r.climbs ??= hardestClimbs(r.samples, r.elev, 3))[0] ?? null;
+            entries.push({ road: r, climb });
             r.listed = true;
             if (entries.length >= listMax)
                 break;
@@ -298,7 +303,9 @@ function render() {
             : layer.highlight(entry.road, on),
         onClick: entry => entry.incline
             ? layer.focusIncline(entry.incline)
-            : layer.focus(entry.road, entry.climb),
+            // In climb mode frame the climb; in Steepest mode the climb is only
+            // shown in the sub-line, so frame the whole road.
+            : layer.focus(entry.road, rankMode === 'climb' ? entry.climb : null),
     });
 
     downloadCtx = { entries, rankMode, windowM, filename: csvFilename(rankMode, windowM, state.label) };
