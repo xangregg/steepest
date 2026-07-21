@@ -198,12 +198,14 @@ assert(multi[0].score >= multi[1].score, 'climbs come best first');
 assert(multi.every((a, x) => multi.every((b, y) => x === y || a.j <= b.i || b.j <= a.i)),
     'climb extents do not overlap');
 
-// Grind mask: a 2.5% monotonic km qualifies (span threshold 1000 m), a 1% km
-// doesn't, and a rolling profile with real dips doesn't.
-const grind = grindMask(flat, mkElev(d => d * 0.025), 1000);
-assert(grind && grind.reduce((s, v) => s + v, 0) >= flat.length - 3, 'steady 2.5% km is a grind');
+// Grind mask: a 3% monotonic km qualifies (span threshold 1000 m); a 1% km and
+// a 2.4% km (just under the 2.5% GRIND_MIN_GRADE) don't, nor does a rolling
+// profile with real dips.
+const grind = grindMask(flat, mkElev(d => d * 0.03), 1000);
+assert(grind && grind.reduce((s, v) => s + v, 0) >= flat.length - 3, 'steady 3% km is a grind');
 assert(grindMask(flat, mkElev(d => d * 0.01), 1000) === null, '1% km is not a grind');
-assert(grindMask(flat, mkElev(d => d * 0.025 + 8 * Math.sin(d / 50)), 1000) === null,
+assert(grindMask(flat, mkElev(d => d * 0.024), 1000) === null, '2.4% km is below the 2.5% threshold -> not a grind');
+assert(grindMask(flat, mkElev(d => d * 0.03 + 8 * Math.sin(d / 50)), 1000) === null,
     'rolling profile with real dips is not a grind');
 // Flat-then-wall: the qualifying 1 km interval is half flat and half a 500 m
 // wall — the coherent incline itself is shorter than the threshold, so no
@@ -225,8 +227,8 @@ assert(gap.length >= 1 && gap.every(k => Math.abs(k - midSeg) < 4),
 // longestIncline: the longest qualifying run with its span/grade (the "Longest
 // inclines" ranking value); the V road's two ~1.5 km sides each beat the 1 km
 // window, and the longest is returned.
-const li = longestIncline(flat, mkElev(d => d * 0.025), 1000);
-assert(li && li.span > 900 && Math.abs(li.grade - 0.025) < 0.006, `longest incline ${li && li.span.toFixed(0)} m @ ${li && (li.grade * 100).toFixed(1)}%`);
+const li = longestIncline(flat, mkElev(d => d * 0.03), 1000);
+assert(li && li.span > 900 && Math.abs(li.grade - 0.03) < 0.006, `longest incline ${li && li.span.toFixed(0)} m @ ${li && (li.grade * 100).toFixed(1)}%`);
 assert(longestIncline(flat, mkElev(d => d * 0.01), 1000) === null, 'no qualifying incline -> null');
 const vLong = longestIncline(vRoad, analyzeRoad(vRoad, vRoad.map(s => Math.abs(s.d - 1500) * 0.03)).elev, 1000);
 assert(vLong && vLong.span > 1000, `V road's longest incline side is ~1.5 km (${vLong && vLong.span.toFixed(0)} m)`);

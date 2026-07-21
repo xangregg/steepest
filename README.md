@@ -56,7 +56,7 @@ Code and docs were largely written using Claude Code (Fable 5 and Opus 4.8).
      geographically, so parallel carriageways still yield one row per
      physical climb).
    - **Longest incline**: the length of the longest long-incline run — the same
-     mostly-monotonic, ≥ 2.25 % stretches (of at least the "long incline" length)
+     mostly-monotonic, ≥ 2.5 % stretches (of at least the "long incline" length)
      that get the amber underlay described below. Ranks by how far the hill goes
      rather than how steep it gets. An incline may span several **connected
      roads** (the "over N roads" knob): a climb that continues across a junction
@@ -79,7 +79,7 @@ Code and docs were largely written using Claude Code (Fable 5 and Opus 4.8).
    get no highlight at all — so the map shows where the hills are, and a long
    road fades in and out with its actual climbs instead of wearing its single
    best grade everywhere. Long inclines — mostly monotonic stretches at least
-   the "long incline" length (default 800 m), averaging ≥ 2.25 % — are drawn as a
+   the "long incline" length (default 800 m), averaging ≥ 2.5 % — are drawn as a
    continuous
    translucent amber underlay beneath the steepness ribbons, so a mile-long
    2.5 % incline is acknowledged instead of invisible; its width flare

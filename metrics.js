@@ -240,7 +240,7 @@ export function bestSustainedWindow(samples, elev, windowM) {
 
 const DIP_ABS = 2;       // m of counter-slope always forgiven (DEM noise)
 const DIP_FRAC = 0.10;   // ... or up to this fraction of the total ascent
-export const GRIND_MIN_GRADE = 0.0225; // a long incline counts from this average grade
+export const GRIND_MIN_GRADE = 0.025; // a long incline counts from this average grade
 
 // Cumulative ascent/descent prefixes, for testing whether an interval is
 // "mostly monotonic" as traveled (shared by climbs and long inclines).
