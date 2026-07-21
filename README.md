@@ -94,7 +94,11 @@ Code and docs were largely written using Claude Code (Fable 5 and Opus 4.8).
    climb is also kept visually continuous: any flat or gentle stretch inside
    it is colored as if it had the climb's average grade, so a breather
    mid-climb doesn't punch a hole in the highlight (the popup still reports
-   the true local grade). The sidebar bar chart shares the color gradient and
+   the true local grade). Steepest mode uses the same red-for-listed /
+   violet-for-other split, but evaluates the violet "other steep" roads at
+   **half** the sustained length — so a short steep pitch (too short to rank, or
+   that the full window averages away) still shows, without changing which roads
+   make the list (a clicked road's popup labels its own window). The sidebar bar chart shares the color gradient and
    doubles as the ranked list; hover to highlight on the map, click to zoom.
    A "Download CSV" button exports the current ranking — including begin/end
    lat/lon/elevation for each ranked stretch, with columns tailored to the

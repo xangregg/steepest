@@ -20,7 +20,7 @@
 import { parseLatLon, geocode, fetchRoads, prepareRoads } from './roads.js';
 import { elevatePoints } from './elevation.js';
 import { resample, analyzeRoad, segmentSustained, hardestClimbs, grindMask, longestInclinePaths, SAMPLE_STEP } from './metrics.js';
-import { initMap, drawRoads, renderList, setGrindStyle, setRampStyle, setWidthStyle, shortLabel } from './render.js';
+import { initMap, drawRoads, renderList, setGrindStyle, setRampStyle, setWidthStyle, shortLabel, GRADE_MIN } from './render.js';
 import { searchKey, cacheGet, cachePut } from './cache.js';
 import { buildCsv, csvFilename } from './csv.js';
 
@@ -184,6 +184,7 @@ function render() {
     const withFields = state.roads.map(r => {
         r.segs = segmentSustained(r.samples, r.elev, windowM);
         r.value = r.segs ? r.segs.reduce((m, v) => Math.max(m, v), 0) : null;
+        r.window = windowM; // the sustained length this road's segs/value use
         r.paint = null;
         r.topExtents = null;
         r.listed = false; // set on listed roads (they wear red on the map vs violet)
@@ -191,6 +192,7 @@ function render() {
     });
     let ranked = withFields.filter(r => r.value != null); // shorter-than-window roads have no value
     let entries; // list rows: [{road, climb|null} | {incline}]
+    let drawn; // roads to draw (sustained mode widens this to shorter steep roads)
 
     // Long inclines, possibly spanning several connected roads (the "over N
     // roads" knob), computed in EVERY mode so the amber underlay reflects it —
@@ -280,11 +282,28 @@ function render() {
             if (entries.length >= listMax)
                 break;
         }
+        // "Other steep" (non-listed) roads count at half the sustained length, so
+        // a short steep pitch still shows in violet even when it's too short — or
+        // not steep enough over the full window — to make the list. Re-evaluate
+        // them at the half window (both coloring and inclusion); each road keeps
+        // its window so the popup labels the grade honestly. Roads with no ≥ 5 %
+        // stretch there aren't drawn (nothing to show).
+        const halfWindow = windowM / 2;
+        for (const r of withFields) {
+            if (r.listed)
+                continue;
+            r.segs = segmentSustained(r.samples, r.elev, halfWindow);
+            r.window = halfWindow;
+            r.value = r.segs ? r.segs.reduce((m, v) => Math.max(m, v), 0) : null;
+        }
+        drawn = withFields.filter(r => r.listed || (r.value != null && r.value >= GRADE_MIN));
     }
+
+    drawn ??= ranked; // climb/incline modes draw the ranked set as-is
 
     // Long-incline acknowledgment: mostly monotonic, >= 2% stretches at least
     // longLen long get the amber underlay where the steepness colors are silent.
-    for (const r of ranked) {
+    for (const r of drawn) {
         if (r.grindSpan !== longLen) {
             r.grind = grindMask(r.samples, r.elev, longLen);
             r.grindSpan = longLen;
@@ -293,7 +312,7 @@ function render() {
 
     layer?.remove();
     // Virtual incline roads draw last so their amber sits over the real roads'.
-    layer = drawRoads(map, [...ranked, ...inclineVirtuals], windowM, mode(), rankMode);
+    layer = drawRoads(map, [...drawn, ...inclineVirtuals], windowM, mode(), rankMode);
     updateLegend(mode(), rankMode, entries.length);
 
     renderList(byId('road-list'), entries, mode(), {

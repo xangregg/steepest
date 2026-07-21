@@ -261,7 +261,7 @@ function popupHtml(road, stretchValue, windowM, segK) {
         <div class="popup-row popup-active"><span>This ${(s1.d - s0.d).toFixed(1)} m segment</span><b>${fmtPct(g)} · ${e0.toFixed(1)}→${e1.toFixed(1)} m</b></div>`;
         if (road.segs)
             localRows += `
-        <div class="popup-row"><span>Sustained ${windowM} m here</span><b>${fmtPct(road.segs[segK])}</b></div>`;
+        <div class="popup-row"><span>Sustained ${road.window ?? windowM} m here</span><b>${fmtPct(road.segs[segK])}</b></div>`;
         // When the click lands on a long incline, describe its whole run.
         if (road.grind?.[segK]) {
             let a = segK, b = segK;
@@ -277,7 +277,7 @@ function popupHtml(road, stretchValue, windowM, segK) {
     }
     else {
         localRows = `
-        <div class="popup-row popup-active"><span>This stretch (sustained ${windowM} m)</span><b>${fmtPct(stretchValue)}</b></div>
+        <div class="popup-row popup-active"><span>This stretch (sustained ${road.window ?? windowM} m)</span><b>${fmtPct(stretchValue)}</b></div>
         <div class="popup-row"><span>Length</span><b>${fmtLen(road.length)}</b></div>`;
     }
     return `<div class="popup"><div class="popup-name">${esc(road.name)}</div>${localRows}
