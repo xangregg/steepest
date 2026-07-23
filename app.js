@@ -266,10 +266,29 @@ function render() {
     }
     else if (rankMode === 'incline') {
         // Rank by longest qualifying long incline (same rule and knob as the
-        // amber underlay). Every road a listed incline touches wears red.
+        // amber underlay). Like the other modes, red marks each ranked
+        // incline's exact extent — per constituent road, from the incline's
+        // provenance slices — and every other steep road goes violet. The
+        // extent's paint is floored at the palest step so the whole incline
+        // reads red even where its grade sits below the 5 % color floor
+        // (inclines only need 2.5 %); popups still report the true grades.
         entries = inclinePaths.slice(0, listMax).map(incline => ({ incline }));
-        for (const { incline } of entries)
-            incline.roads.forEach(r => { r.listed = true; });
+        for (const { incline } of entries) {
+            for (const s of incline.segs) {
+                const r = s.r;
+                const [i0, i1] = s.from <= s.to ? [s.from, s.to] : [s.to, s.from];
+                r.listed = true;
+                (r.topExtents ??= []).push([i0, i1]);
+                // Short connector roads have no window segs; paint from zeros
+                // so the floor still gives their slice the palest red.
+                const paint = (r.paint ??= Float64Array.from(r.segs ?? new Float64Array(r.samples.length - 1)));
+                for (let k = i0; k < i1 && k < paint.length; k++)
+                    paint[k] = Math.max(paint[k], GRADE_MIN);
+            }
+        }
+        // Draw roads with no ranking value too when a listed incline crosses
+        // them (short connectors), so the red extent isn't interrupted.
+        drawn = withFields.filter(r => r.value != null || r.listed);
     }
     else {
         // Rows are STRETCHES: each road's distinct steep sections (one best
