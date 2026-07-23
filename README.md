@@ -113,7 +113,12 @@ Code and docs were largely written using Claude Code (Fable 5 and Opus 4.8).
    pitch (too short to rank, or that the full window averages away) still
    appears, without changing which roads make the list (a clicked segment's
    popup reports both its own grade and the sustained grade at the chosen
-   length, showing how far it falls short of ranking). The sidebar bar chart shares the color gradient and
+   length, showing how far it falls short of ranking). Longest-incline mode
+   follows the same pattern: each ranked incline's exact extent — across every
+   road it spans, including short connectors — wears the red gradient, floored
+   at the palest red where the incline's grade sits below the 5 % color scale
+   (inclines only need 2.5 %), largely covering its amber underlay; every
+   other steep road stays violet, and popups keep reporting true grades. The sidebar bar chart shares the color gradient and
    doubles as the ranked list; hover to highlight on the map, click to zoom.
    A "Download CSV" button exports the current ranking — including begin/end
    lat/lon/elevation for each ranked stretch, with columns tailored to the

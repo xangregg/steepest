@@ -333,18 +333,24 @@ const PAINT_LOCAL_CAP = 1.0; // paint never exceeds this × the segment's own lo
 // (climb-interval boundaries, so climb and non-climb hues never share a chunk).
 function colorChunks(road, splitAt) {
     const { samples, segs, elev } = road;
-    // Roads shorter than the sustained window have no segment grades — nothing to
-    // paint. They still draw a skeleton/halo and (in incline mode) get haloed as
-    // part of a multi-road incline; they just contribute no colored ribbon.
-    if (!segs)
+    // Roads shorter than the sustained window have no segment grades — nothing
+    // to paint unless a mode supplied explicit paint (incline mode floors a
+    // ranked incline's extent even on a short connector road). They still draw
+    // a skeleton/halo; without paint they just contribute no colored ribbon.
+    const base = road.paint ?? segs;
+    if (!base)
         return [];
     // Paint starts from the sustained-window value (plus the climb floor in
     // climb mode) but is capped relative to the segment's own grade, so color
-    // doesn't bleed past where a hill really ends.
-    const paint = Float64Array.from(road.paint ?? segs);
+    // doesn't bleed past where a hill really ends. An explicit paint floor
+    // (climb/incline extents) keeps at least the palest step across gentle
+    // interior segments — a ranked extent reads continuously, like closed
+    // gaps, even where the road is briefly flat or the incline sits under 5 %.
+    const paint = Float64Array.from(base);
     for (let k = 0; k < paint.length; k++) {
         const local = Math.abs(elev[k + 1] - elev[k]) / (samples[k + 1].d - samples[k].d);
-        paint[k] = Math.min(paint[k], local * PAINT_LOCAL_CAP);
+        const capped = Math.min(paint[k], local * PAINT_LOCAL_CAP);
+        paint[k] = road.paint && paint[k] >= GRADE_MIN ? Math.max(capped, GRADE_MIN) : capped;
     }
     // Close short low-grade runs flanked by painted segments on both sides: a
     // 50 m crest flat shouldn't visually sever one continuous hill. Closed
@@ -373,19 +379,19 @@ function colorChunks(road, splitAt) {
     const bin = v => Math.min(BINS, Math.round(((v - GRADE_MIN) / (GRADE_MAX - GRADE_MIN)) * BINS));
     const chunks = [];
     let cur = null;
-    for (let k = 0; k < segs.length; k++) {
+    for (let k = 0; k < paint.length; k++) {
         if (paint[k] < GRADE_MIN) {
             cur = null;
             continue;
         }
         const b = bin(paint[k]);
         if (!cur || b !== cur.bin || splitAt?.has(k)) {
-            cur = { bin: b, paint: paint[k], value: segs[k], kStart: k, kEnd: k + 1 };
+            cur = { bin: b, paint: paint[k], value: segs?.[k] ?? 0, kStart: k, kEnd: k + 1 };
             chunks.push(cur);
         }
         else {
             cur.paint = Math.max(cur.paint, paint[k]);
-            cur.value = Math.max(cur.value, segs[k]);
+            cur.value = Math.max(cur.value, segs?.[k] ?? 0);
             cur.kEnd = k + 1;
         }
     }
