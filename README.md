@@ -41,6 +41,13 @@ Code and docs were largely written using Claude Code (Fable 5 and Opus 4.8).
      input: 25 m degenerates to "steepest single segment" (noisy — treat with
      skepticism), longer windows reward genuinely long climbs. Roads shorter
      than the window are excluded, since the metric is undefined for them.
+     Rows are *stretches*, not whole roads: a road with several steep sections
+     can take several list spots — each section's best window competes on its
+     own, up to three per road. Sections split where the metric drops below
+     the 5 % display floor, or at a marked dip within a steep run (the window
+     grade falling below ~80 % of the weaker section — a prominence test, so a
+     uniformly steep hill or a mere shoulder still yields one row). Same-name
+     entries from parallel chains are deduped geographically.
    - **Hardest climb**: effort rather than grade — each road's best
      continuous climb (in either travel direction), scored by the **effort
      integral** Σ segment length × grade², which equals gain × average grade
@@ -95,10 +102,13 @@ Code and docs were largely written using Claude Code (Fable 5 and Opus 4.8).
    it is colored as if it had the climb's average grade, so a breather
    mid-climb doesn't punch a hole in the highlight (the popup still reports
    the true local grade). Steepest mode uses the same red/violet split, with
-   red marking each listed road's **ranked best stretch** (the rest of the road
-   goes violet like any other steep road, so a long road doesn't wear its
-   single best grade end to end — the width flare still runs continuously
-   across the color change). The violet "other steep" roads have **no length
+   red marking each **ranked stretch**, extended along its shoulders —
+   connected segments whose sustained grade stays within the same ~80 %
+   prominence fraction of the stretch's own (and above 5 %) — so
+   nearly-as-steep road on either side reads as part of the red section
+   rather than a violet fringe, while the genuinely lesser rest of the road
+   goes violet like any other steep road (the width flare still runs
+   continuously across the color change). The violet "other steep" roads have **no length
    threshold** — any single ~25 m segment at ≥ 5 % shows — so a short steep
    pitch (too short to rank, or that the full window averages away) still
    appears, without changing which roads make the list (a clicked segment's

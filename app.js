@@ -20,7 +20,7 @@
 
 import { parseLatLon, geocode, fetchRoads, prepareRoads } from './roads.js';
 import { elevatePoints } from './elevation.js';
-import { resample, analyzeRoad, segmentSustained, bestSustainedWindow, hardestClimbs, grindMask, longestInclinePaths, SAMPLE_STEP } from './metrics.js';
+import { resample, analyzeRoad, segmentSustained, sustainedStretches, hardestClimbs, grindMask, longestInclinePaths, SAMPLE_STEP, STRETCH_COL_FRAC } from './metrics.js';
 import { initMap, drawRoads, renderList, setGrindStyle, setRampStyle, setWidthStyle, shortLabel, GRADE_MIN } from './render.js';
 import { searchKey, cacheGet, cachePut } from './cache.js';
 import { buildCsv, csvFilename } from './csv.js';
@@ -136,14 +136,19 @@ async function run(refresh = false) {
     }
 }
 
-// Geographic bounding box of a climb's extent, padded ~50 m and cached, for
-// deduping the same physical climb reported by parallel same-name chains.
-function climbBox(e) {
+// Geographic bounding box of an entry's ranked extent (climb or sustained
+// stretch), padded ~50 m and cached, for deduping the same physical hill
+// reported by parallel same-name chains.
+function extentBox(e) {
     if (e.box)
         return e.box;
+    // The ranked extent: sustained entries carry both a stretch (the ranked
+    // unit) and a display-only climb — the stretch must win here, or one
+    // stretch's long containing climb would swallow the road's other stretches.
+    const ext = e.stretch ?? e.climb;
     const pad = 0.0005;
     let latMin = Infinity, latMax = -Infinity, lonMin = Infinity, lonMax = -Infinity;
-    for (let k = e.climb.i; k <= e.climb.j; k++) {
+    for (let k = ext.i; k <= ext.j; k++) {
         const s = e.road.samples[k];
         latMin = Math.min(latMin, s.lat);
         latMax = Math.max(latMax, s.lat);
@@ -193,7 +198,7 @@ function render() {
         return r;
     });
     let ranked = withFields.filter(r => r.value != null); // shorter-than-window roads have no value
-    let entries; // list rows: [{road, climb|null} | {incline}]
+    let entries; // list rows: [{road, climb, stretch?} | {incline}] (climb is display-only in sustained mode)
     let drawn; // roads to draw (sustained mode widens this to shorter steep roads)
 
     // Long inclines, possibly spanning several connected roads (the "over N
@@ -243,7 +248,11 @@ function render() {
                 break;
             if (!e.road.unnamed) {
                 const kept = keptByName.get(e.road.name) ?? [];
-                if (kept.some(k => boxOverlap(climbBox(k), climbBox(e))))
+                // Same-road entries are never duplicates (their extents are
+                // disjoint along the road); the box check is for the same hill
+                // reported by a DIFFERENT same-name chain, and would otherwise
+                // eat a switchback road's genuinely distinct nearby climbs.
+                if (kept.some(k => k.road !== e.road && boxOverlap(extentBox(k), extentBox(e))))
                     continue;
                 kept.push(e);
                 keptByName.set(e.road.name, kept);
@@ -263,32 +272,55 @@ function render() {
             incline.roads.forEach(r => { r.listed = true; });
     }
     else {
-        ranked.sort((a, b) => b.value - a.value);
-        // The list dedupes by name (a road split into disjoint pieces keeps
-        // only its steepest piece); the map still shows every piece. Listed
-        // roads wear red on the map, every other steep road violet — like
-        // climb mode, so the map mirrors the city-wide ranking in both modes.
+        // Rows are STRETCHES: each road's distinct steep sections (one best
+        // window per >= 5 % run of the metric, up to 3 — see
+        // sustainedStretches) compete in one pool, so a road with two steep
+        // sections separated by gentler road can take two spots, like climb
+        // mode. Same-name entries are deduped geographically, so parallel
+        // carriageways and same-name pieces still yield one row per hill.
+        const pool = [];
+        for (const r of ranked)
+            for (const s of sustainedStretches(r.samples, r.elev, windowM, GRADE_MIN, 3))
+                pool.push({ road: r, stretch: s });
+        pool.sort((a, b) => b.stretch.grade - a.stretch.grade);
         entries = [];
-        const seen = new Set();
-        for (const r of ranked) {
-            if (!r.unnamed && seen.has(r.name))
-                continue;
-            seen.add(r.name);
-            // Carry the road's hardest climb for the list sub-line — its rise and
-            // length say more than the (whole-road) length did. The bar and the
-            // right-hand % still reflect the sustained ranking; the climb is
-            // display-only here (see onClick, which frames the road, not the climb).
-            const climb = (r.climbs ??= hardestClimbs(r.samples, r.elev, 3))[0] ?? null;
-            entries.push({ road: r, climb });
-            r.listed = true;
-            // Only the ranked stretch (the road's best window) wears red; the
-            // road's other steep parts go violet like any unlisted road, so a
-            // long road doesn't wear its single best grade end to end.
-            const best = bestSustainedWindow(r.samples, r.elev, windowM);
-            if (best)
-                r.topExtents = [[best.i, best.j]];
+        const keptByName = new Map();
+        for (const e of pool) {
             if (entries.length >= listMax)
                 break;
+            if (!e.road.unnamed) {
+                const kept = keptByName.get(e.road.name) ?? [];
+                // Same-road stretches are never duplicates (disjoint along the
+                // road); the box check targets parallel same-name chains only.
+                if (kept.some(k => k.road !== e.road && boxOverlap(extentBox(k), extentBox(e))))
+                    continue;
+                kept.push(e);
+                keptByName.set(e.road.name, kept);
+            }
+            // Sub-line: the climb containing this stretch (falling back to the
+            // road's hardest) — its rise and length say more than the road
+            // length did. Display-only; the bar and right-hand % show the
+            // stretch's sustained grade.
+            const climbs = (e.road.climbs ??= hardestClimbs(e.road.samples, e.road.elev, 3));
+            const mid = (e.stretch.i + e.stretch.j) / 2;
+            e.climb = climbs.find(c => mid >= c.i && mid <= c.j) ?? climbs[0] ?? null;
+            entries.push(e);
+            e.road.listed = true;
+            // The ranked stretch wears red, extended into its shoulders:
+            // contiguous segments whose sustained grade stays within
+            // STRETCH_COL_FRAC of the stretch's own (and above GRADE_MIN) —
+            // the same fraction that decides when a neighboring peak ranks
+            // separately, so steepness not distinct enough for its own row
+            // reads as part of this red section instead of a violet wing.
+            // The rest of the road goes violet like any unlisted road.
+            const segs = e.road.segs;
+            const thresh = Math.max(GRADE_MIN, STRETCH_COL_FRAC * e.stretch.grade);
+            let a = e.stretch.i, b = e.stretch.j;
+            while (a > 0 && segs[a - 1] >= thresh)
+                a--;
+            while (b < segs.length && segs[b] >= thresh)
+                b++;
+            (e.road.topExtents ??= []).push([a, b]);
         }
         // "Other steep" (non-listed) roads have no length threshold: any single
         // ~25 m segment at ≥ 5 % shows in violet, even on a road too short — or
@@ -331,9 +363,10 @@ function render() {
             : layer.highlight(entry.road, on),
         onClick: entry => entry.incline
             ? layer.focusIncline(entry.incline)
-            // In climb mode frame the climb; in Steepest mode the climb is only
-            // shown in the sub-line, so frame the whole road.
-            : layer.focus(entry.road, rankMode === 'climb' ? entry.climb : null),
+            // Frame the ranked extent: the climb in climb mode, the stretch in
+            // Steepest mode (rows are stretches, so clicking a road's second
+            // stretch must show THAT stretch, not the road's best).
+            : layer.focus(entry.road, rankMode === 'climb' ? entry.climb : entry.stretch ?? null),
     });
 
     downloadCtx = { entries, rankMode, windowM, filename: csvFilename(rankMode, windowM, state.label) };
