@@ -675,13 +675,17 @@ export function drawRoads(map, ranked, windowM, mode, rankMode = 'sustained') {
     // a hovered road that's fully out of view. Hovering the ranked list must not
     // pan the map (too heavy a side effect for a mouseover), so this points the
     // way instead. Same teal as the halo, so both read as "the hovered road."
-    const ARROW_INSET = 34; // px the arrow sits in from the viewport edge
+    const ARROW_LEN = 88;    // px the arrow spans along its pointing axis
+    const ARROW_WID = 72;    // px the arrow spans across (perpendicular)
+    const ARROW_MARGIN = 10; // px gap kept between the arrow's outer edge and the viewport
     const arrow = L.DomUtil.create('div', 'offscreen-arrow', map.getContainer());
     // A shaft + head (not a bare triangle) so the pointing direction is obvious.
-    arrow.innerHTML = `<svg width="44" height="24" viewBox="0 0 44 24"><path d="M3 9 H26 V3 L42 12 L26 21 V15 H3 Z" fill="${haloColor}"/></svg>`;
+    // Stretched 2x along its length and 3x across its width vs. the 44x24 art, and
+    // faded to HALO_OPACITY so its teal reads the same as the in-view hover halo.
+    arrow.innerHTML = `<svg width="88" height="72" viewBox="0 0 44 24" preserveAspectRatio="none"><path d="M3 9 H26 V3 L42 12 L26 21 V15 H3 Z" fill="${haloColor}"/></svg>`;
     Object.assign(arrow.style, {
-        position: 'absolute', left: '0', top: '0', width: '44px', height: '24px',
-        zIndex: '700', pointerEvents: 'none', display: 'none',
+        position: 'absolute', left: '0', top: '0', width: '88px', height: '72px',
+        zIndex: '700', pointerEvents: 'none', display: 'none', opacity: HALO_OPACITY,
         filter: 'drop-shadow(0 0 2px rgba(0,0,0,.55))',
     });
     let arrowLatLngs = null; // [[lat,lon]...] of the hovered road/incline, or null
@@ -702,14 +706,19 @@ export function drawRoads(map, ranked, windowM, mode, rankMode = 'sustained') {
         const dx = target.x - center.x, dy = target.y - center.y;
         if (!dx && !dy)
             return;
-        // Clamp the ray from view center toward the road to the inset rectangle.
+        // Inset the clamp rectangle by the rotated arrow's own half-extent (plus a
+        // margin) so the whole rotated arrow, tip included, stays inside the view.
+        const angle = Math.atan2(dy, dx), c = Math.abs(Math.cos(angle)), s = Math.abs(Math.sin(angle));
+        const insetX = (ARROW_LEN * c + ARROW_WID * s) / 2 + ARROW_MARGIN;
+        const insetY = (ARROW_LEN * s + ARROW_WID * c) / 2 + ARROW_MARGIN;
+        // Clamp the ray from view center toward the road to that inset rectangle.
         const t = Math.min(
-            dx ? (center.x - ARROW_INSET) / Math.abs(dx) : Infinity,
-            dy ? (center.y - ARROW_INSET) / Math.abs(dy) : Infinity);
+            dx ? (center.x - insetX) / Math.abs(dx) : Infinity,
+            dy ? (center.y - insetY) / Math.abs(dy) : Infinity);
         arrow.style.display = '';
         arrow.style.left = `${center.x + dx * t}px`;
         arrow.style.top = `${center.y + dy * t}px`;
-        arrow.style.transform = `translate(-50%, -50%) rotate(${Math.atan2(dy, dx)}rad)`;
+        arrow.style.transform = `translate(-50%, -50%) rotate(${angle}rad)`;
     }
     // Keep the arrow correct if the map moves while a row stays hovered.
     map.on('move zoom', updateArrow);
