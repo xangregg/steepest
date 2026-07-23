@@ -94,8 +94,11 @@ Code and docs were largely written using Claude Code (Fable 5 and Opus 4.8).
    climb is also kept visually continuous: any flat or gentle stretch inside
    it is colored as if it had the climb's average grade, so a breather
    mid-climb doesn't punch a hole in the highlight (the popup still reports
-   the true local grade). Steepest mode uses the same red-for-listed /
-   violet-for-other split, but the violet "other steep" roads have **no length
+   the true local grade). Steepest mode uses the same red/violet split, with
+   red marking each listed road's **ranked best stretch** (the rest of the road
+   goes violet like any other steep road, so a long road doesn't wear its
+   single best grade end to end — the width flare still runs continuously
+   across the color change). The violet "other steep" roads have **no length
    threshold** — any single ~25 m segment at ≥ 5 % shows — so a short steep
    pitch (too short to rank, or that the full window averages away) still
    appears, without changing which roads make the list (a clicked segment's

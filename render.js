@@ -169,7 +169,9 @@ export function initMap(el, mode) {
         // apply to the categorical grind color.
         const grindRow = `<div class="legend-row legend-grind"><div class="legend-swatch" style="background:${GRIND_COLORS[m]};opacity:${GRIND_OPACITY}"></div><span class="legend-label">long incline (≥${+(GRIND_MIN_GRADE * 100).toFixed(2)}%)</span></div>`;
         // Every mode reserves red for the listed items and violet for the rest.
-        const noun = rankMode === 'climb' ? 'climbs' : rankMode === 'incline' ? 'inclines' : 'roads';
+        // Sustained mode's red marks each listed road's ranked best stretch —
+        // not the whole road — so the label says stretches, not roads.
+        const noun = rankMode === 'climb' ? 'climbs' : rankMode === 'incline' ? 'inclines' : 'stretches';
         const listLabel = `top ${topN} ${noun}`;
         legendDiv.innerHTML = `<div class="legend-title">grade</div>
                <div class="legend-row">${barDiv(rampCss(RAMPS[m]))}<span class="legend-label">${listLabel}</span></div>
@@ -796,8 +798,9 @@ export function drawRoads(map, ranked, windowM, mode, rankMode = 'sustained') {
                 return popupHtml(road, stretchValue, windowM, k);
             });
         };
-        // Hue changes exactly at listed-climb extent boundaries.
-        const split = isClimbMode && road.topExtents ? new Set(road.topExtents.flat()) : null;
+        // Hue changes exactly at listed-extent boundaries (climb mode: listed
+        // climbs; sustained mode: the listed road's ranked best window).
+        const split = road.topExtents ? new Set(road.topExtents.flat()) : null;
 
         // Long-incline underlay: one continuous ribbon per incline run. Its
         // altitude-flare width accumulates over the whole run; the pane keeps
@@ -839,30 +842,32 @@ export function drawRoads(map, ranked, windowM, mode, rankMode = 'sustained') {
             }
         }
 
-        // Group contiguous same-hue chunks into runs; each run's width starts
-        // at WIDTH_MIN at its own lowest altitude, so thin -> thick = uphill.
+        // Group contiguous chunks into runs — across hue changes, so one hill
+        // that switches red/violet mid-slope keeps a single width flare instead
+        // of resetting at each color boundary. Each run's width starts at
+        // WIDTH_MIN at its own lowest altitude, so thin -> thick = uphill.
         const runs = [];
         for (const chunk of colorChunks(road, split)) {
-            // Red is reserved for the listed (top-N) roads — climb mode marks
-            // the listed climb extents, sustained mode the whole listed road —
-            // so map color mirrors the ranking; everything else steep is violet.
-            const prominent = isClimbMode
-                ? !!road.topExtents?.some(([ci, cj]) => chunk.kStart >= ci && chunk.kStart < cj)
+            // Red is reserved for the ranked (top-N) extents — climb mode's
+            // listed climbs, sustained mode's listed best windows — so map
+            // color mirrors the ranking; everything else steep is violet.
+            // Incline mode has no extents: every listed road wears red whole.
+            chunk.prominent = road.topExtents
+                ? road.topExtents.some(([ci, cj]) => chunk.kStart >= ci && chunk.kStart < cj)
                 : !!road.listed;
-            const hue = prominent ? 'climb' : 'other';
             const prev = runs[runs.length - 1];
-            if (prev && prev.hue === hue && prev.kEnd === chunk.kStart) {
+            if (prev && prev.kEnd === chunk.kStart) {
                 prev.kEnd = chunk.kEnd;
                 prev.items.push(chunk);
             }
             else {
-                runs.push({ hue, prominent, kStart: chunk.kStart, kEnd: chunk.kEnd, items: [chunk] });
+                runs.push({ kStart: chunk.kStart, kEnd: chunk.kEnd, items: [chunk] });
             }
         }
         for (const run of runs) {
             const widthAt = runWidthAt(run.kStart, run.kEnd);
             for (const chunk of run.items) {
-                const c = (run.prominent ? color : colorAlt)(chunk.paint);
+                const c = (chunk.prominent ? color : colorAlt)(chunk.paint);
                 const iStart = dp.sampleIdx[chunk.kStart], iEnd = dp.sampleIdx[chunk.kEnd];
                 // Round-join centerline stroke in the chunk color, drawn beneath
                 // the mitered ring. The ring carries the altitude taper but self-
@@ -892,7 +897,7 @@ export function drawRoads(map, ranked, windowM, mode, rankMode = 'sustained') {
                 });
                 wirePopup(poly, chunk.value);
                 poly.addTo(fg);
-                chunks.push({ poly, body, bodyWeight, prominent: run.prominent, kStart: chunk.kStart, kEnd: chunk.kEnd, paintVal: chunk.paint, iStart, iEnd, widthAt });
+                chunks.push({ poly, body, bodyWeight, prominent: chunk.prominent, kStart: chunk.kStart, kEnd: chunk.kEnd, paintVal: chunk.paint, iStart, iEnd, widthAt });
                 if (!steepest || chunk.paint > steepest.chunkPaint) {
                     steepest = poly;
                     steepest.chunkPaint = chunk.paint;

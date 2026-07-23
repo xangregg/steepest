@@ -14,12 +14,13 @@
 //             each is {score, gain, span, grade, i, j, dir}
 //   grind     long-incline mask over segments (memoized per span)
 //   paint     color values; climb mode floors climb extents for continuity
-//   topExtents  [i, j] extents of this road's climbs that made the ranked
-//               list — those wear red on the map
+//   topExtents  [i, j] extents that made the ranked list (climb mode: this
+//               road's listed climbs; sustained mode: the listed road's best
+//               window) — those wear red on the map, the rest violet
 
 import { parseLatLon, geocode, fetchRoads, prepareRoads } from './roads.js';
 import { elevatePoints } from './elevation.js';
-import { resample, analyzeRoad, segmentSustained, hardestClimbs, grindMask, longestInclinePaths, SAMPLE_STEP } from './metrics.js';
+import { resample, analyzeRoad, segmentSustained, bestSustainedWindow, hardestClimbs, grindMask, longestInclinePaths, SAMPLE_STEP } from './metrics.js';
 import { initMap, drawRoads, renderList, setGrindStyle, setRampStyle, setWidthStyle, shortLabel, GRADE_MIN } from './render.js';
 import { searchKey, cacheGet, cachePut } from './cache.js';
 import { buildCsv, csvFilename } from './csv.js';
@@ -280,6 +281,12 @@ function render() {
             const climb = (r.climbs ??= hardestClimbs(r.samples, r.elev, 3))[0] ?? null;
             entries.push({ road: r, climb });
             r.listed = true;
+            // Only the ranked stretch (the road's best window) wears red; the
+            // road's other steep parts go violet like any unlisted road, so a
+            // long road doesn't wear its single best grade end to end.
+            const best = bestSustainedWindow(r.samples, r.elev, windowM);
+            if (best)
+                r.topExtents = [[best.i, best.j]];
             if (entries.length >= listMax)
                 break;
         }
