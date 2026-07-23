@@ -448,14 +448,17 @@ export function grindMask(samples, elev, minSpan) {
     return mask.some(v => v) ? mask : null;
 }
 
-// The road's single longest qualifying long-incline (grind) run — its sample
-// endpoints and stats {i, j, span, gain, grade}, or null — using the same rule
-// (and minSpan) as the amber underlay. The ranking value for "Longest inclines".
-export function longestIncline(samples, elev, minSpan) {
+// Every qualifying long-incline (grind) run on the profile — sample endpoints
+// and stats {i, j, span, gain, grade}, longest first — using the same rule
+// (and minSpan) as the amber underlay. The mask already separates opposite-
+// direction inclines meeting at a summit or valley, so a road climbing over a
+// hill (or out of a creek both ways) reports each side as its own incline.
+export function longestInclines(samples, elev, minSpan) {
     const mask = grindMask(samples, elev, minSpan);
     if (!mask)
-        return null;
-    let best = null, a = -1;
+        return [];
+    const runs = [];
+    let a = -1;
     for (let k = 0; k <= mask.length; k++) {
         const on = k < mask.length && mask[k];
         if (on && a < 0) {
@@ -463,14 +466,17 @@ export function longestIncline(samples, elev, minSpan) {
         }
         else if (!on && a >= 0) {
             const span = samples[k].d - samples[a].d;
-            if (!best || span > best.span) {
-                const gain = Math.abs(elev[k] - elev[a]);
-                best = { i: a, j: k, span, gain, grade: gain / span };
-            }
+            const gain = Math.abs(elev[k] - elev[a]);
+            runs.push({ i: a, j: k, span, gain, grade: gain / span });
             a = -1;
         }
     }
-    return best;
+    return runs.sort((x, y) => y.span - x.span);
+}
+
+// The single longest run — the ranking value for "Longest inclines".
+export function longestIncline(samples, elev, minSpan) {
+    return longestInclines(samples, elev, minSpan)[0] ?? null;
 }
 
 // --- Multi-road long inclines -------------------------------------------
@@ -545,8 +551,10 @@ function combineSteps(steps) {
 
 // Rank the longest qualifying long inclines across the road network, each
 // possibly spanning up to maxRoads connected roads. Returns them longest-first,
-// de-duplicated so no road (or road name) appears in two reported inclines.
-// maxRoads = 1 reproduces the single-road ranking. Each result:
+// de-duplicated by physical extent — no stretch of pavement appears in two
+// reported inclines, but a road with two distinct inclines (meeting at a
+// summit or valley) reports both. maxRoads = 1 reproduces the single-road
+// ranking. Each result:
 //   { span, gain, grade, roads:[...], segs:[{r,from,to}], path:[[lat,lon]...],
 //     start:{lat,lon,elev}, end:{lat,lon,elev} }
 export function longestInclinePaths(roads, minSpan, maxRoads = 1) {
@@ -555,36 +563,37 @@ export function longestInclinePaths(roads, minSpan, maxRoads = 1) {
 
     const evaluate = steps => {
         const { samples, elev, prov } = combineSteps(steps);
-        const inc = longestIncline(samples, elev, minSpan);
-        if (!inc)
-            return;
-        const segs = [];
-        for (let k = inc.i; k <= inc.j; k++) {
-            const { r, k: idx } = prov[k];
-            const last = segs[segs.length - 1];
-            if (last && last.r === r)
-                last.to = idx;
-            else
-                segs.push({ r, from: idx, to: idx });
+        // Every qualifying run on the chain competes — a road that climbs over
+        // a summit (or out of a valley both ways) reports each side.
+        for (const inc of longestInclines(samples, elev, minSpan)) {
+            const segs = [];
+            for (let k = inc.i; k <= inc.j; k++) {
+                const { r, k: idx } = prov[k];
+                const last = segs[segs.length - 1];
+                if (last && last.r === r)
+                    last.to = idx;
+                else
+                    segs.push({ r, from: idx, to: idx });
+            }
+            const point = k => ({ lat: prov[k].r.samples[prov[k].k].lat, lon: prov[k].r.samples[prov[k].k].lon, elev: elev[k] });
+            const bottom = elev[inc.i] <= elev[inc.j] ? inc.i : inc.j;
+            // The incline's own extent as a standalone profile (distance
+            // re-zeroed), so callers can build a "virtual road" for it — one
+            // continuous amber underlay and halo across the junctions it spans.
+            const profSamples = [], profElev = [];
+            for (let k = inc.i; k <= inc.j; k++) {
+                profSamples.push({ lat: samples[k].lat, lon: samples[k].lon, d: samples[k].d - samples[inc.i].d });
+                profElev.push(elev[k]);
+            }
+            found.push({
+                span: inc.span, gain: inc.gain, grade: inc.grade,
+                roads: [...new Set(segs.map(s => s.r))],
+                segs,
+                samples: profSamples, elev: profElev,
+                path: profSamples.map(s => [s.lat, s.lon]),
+                start: point(bottom), end: point(bottom === inc.i ? inc.j : inc.i),
+            });
         }
-        const point = k => ({ lat: prov[k].r.samples[prov[k].k].lat, lon: prov[k].r.samples[prov[k].k].lon, elev: elev[k] });
-        const bottom = elev[inc.i] <= elev[inc.j] ? inc.i : inc.j;
-        // The incline's own extent as a standalone profile (distance re-zeroed),
-        // so callers can build a "virtual road" for it — one continuous amber
-        // underlay and halo across the junctions it spans.
-        const profSamples = [], profElev = [];
-        for (let k = inc.i; k <= inc.j; k++) {
-            profSamples.push({ lat: samples[k].lat, lon: samples[k].lon, d: samples[k].d - samples[inc.i].d });
-            profElev.push(elev[k]);
-        }
-        found.push({
-            span: inc.span, gain: inc.gain, grade: inc.grade,
-            roads: [...new Set(segs.map(s => s.r))],
-            segs,
-            samples: profSamples, elev: profElev,
-            path: profSamples.map(s => [s.lat, s.lon]),
-            start: point(bottom), end: point(bottom === inc.i ? inc.j : inc.i),
-        });
     };
 
     const dfs = (steps, roadSet, depth) => {
@@ -618,17 +627,51 @@ export function longestInclinePaths(roads, minSpan, maxRoads = 1) {
     }
 
     found.sort((a, b) => b.span - a.span);
-    const picked = [], usedRoads = new Set(), usedNames = new Set();
-    for (const inc of found) {
-        if (inc.roads.some(r => usedRoads.has(r)))
-            continue;
-        const names = inc.roads.filter(r => !r.unnamed).map(r => r.name);
-        if (names.some(n => usedNames.has(n)))
-            continue;
-        picked.push(inc);
-        inc.roads.forEach(r => usedRoads.add(r));
-        names.forEach(n => usedNames.add(n));
-    }
+    // Dedup by physical extent, longest first. Two inclines conflict when
+    // they cover overlapping sample ranges on a shared road (the same chain's
+    // sub-pieces, or the same incline found from the reverse orientation — so
+    // a multi-road incline still supersedes its single-road pieces), or when
+    // same-name slices on DIFFERENT road objects overlap geographically
+    // (parallel same-name chains reporting the same hill). Two inclines that
+    // merely meet at a summit or valley sample of one road both rank.
+    const pad = 0.0005; // ~50 m, like app.js extentBox
+    const segBox = s => {
+        if (s.box)
+            return s.box;
+        const [lo, hi] = s.from <= s.to ? [s.from, s.to] : [s.to, s.from];
+        let latMin = Infinity, latMax = -Infinity, lonMin = Infinity, lonMax = -Infinity;
+        for (let k = lo; k <= hi; k++) {
+            const p = s.r.samples[k];
+            latMin = Math.min(latMin, p.lat);
+            latMax = Math.max(latMax, p.lat);
+            lonMin = Math.min(lonMin, p.lon);
+            lonMax = Math.max(lonMax, p.lon);
+        }
+        s.box = [latMin - pad, latMax + pad, lonMin - pad, lonMax + pad];
+        return s.box;
+    };
+    const boxOverlap = (a, b) => a[0] <= b[1] && b[0] <= a[1] && a[2] <= b[3] && b[2] <= a[3];
+    const conflicts = (a, b) => {
+        for (const s of a.segs) {
+            for (const t of b.segs) {
+                if (s.r === t.r) {
+                    const [slo, shi] = s.from <= s.to ? [s.from, s.to] : [s.to, s.from];
+                    const [tlo, thi] = t.from <= t.to ? [t.from, t.to] : [t.to, t.from];
+                    if (Math.max(slo, tlo) < Math.min(shi, thi))
+                        return true; // share at least one segment
+                }
+                else if (!s.r.unnamed && !t.r.unnamed && s.r.name === t.r.name &&
+                         boxOverlap(segBox(s), segBox(t))) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    };
+    const picked = [];
+    for (const inc of found)
+        if (!picked.some(p => conflicts(inc, p)))
+            picked.push(inc);
     return picked;
 }
 
