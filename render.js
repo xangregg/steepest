@@ -259,9 +259,17 @@ function popupHtml(road, stretchValue, windowM, segK) {
         const g = Math.abs(e1 - e0) / (s1.d - s0.d);
         localRows = `
         <div class="popup-row popup-active"><span>This ${(s1.d - s0.d).toFixed(1)} m segment</span><b>${fmtPct(g)} · ${e0.toFixed(1)}→${e1.toFixed(1)} m</b></div>`;
-        if (road.segs)
+        // Per-segment-colored roads (sustained mode's violet) keep their
+        // full-window segs in fullSegs: the sustained row reports the grade at
+        // the chosen length — how far this spot falls short of qualifying for
+        // the ranking — rather than repeating the segment row above.
+        const susSegs = road.fullSegs !== undefined ? road.fullSegs : road.segs;
+        if (susSegs)
             localRows += `
-        <div class="popup-row"><span>Sustained ${road.window ?? windowM} m here</span><b>${fmtPct(road.segs[segK])}</b></div>`;
+        <div class="popup-row"><span>Sustained ${windowM} m here</span><b>${fmtPct(susSegs[segK])}</b></div>`;
+        else if (road.segs)
+            localRows += `
+        <div class="popup-row"><span>Sustained ${windowM} m here</span><b>road too short</b></div>`;
         // When the click lands on a long incline, describe its whole run.
         if (road.grind?.[segK]) {
             let a = segK, b = segK;
@@ -286,20 +294,27 @@ function popupHtml(road, stretchValue, windowM, segK) {
 }
 
 // Nearest sample segment to a clicked point (planar approximation is plenty
-// at road scale).
+// at road scale). True point-to-segment distance — nearest-vertex would credit
+// a click in a segment's second half to the following segment, so the popup
+// reported a neighbor of the colored segment actually clicked.
 function nearestSegIndex(road, latlng) {
     const cosLat = Math.cos((latlng.lat * Math.PI) / 180);
+    const px = latlng.lng * cosLat, py = latlng.lat;
     let best = 0, bestD = Infinity;
-    for (let i = 0; i < road.samples.length; i++) {
-        const s = road.samples[i];
-        const dLat = s.lat - latlng.lat, dLon = (s.lon - latlng.lng) * cosLat;
-        const d2 = dLat * dLat + dLon * dLon;
+    for (let i = 0; i < road.samples.length - 1; i++) {
+        const a = road.samples[i], b = road.samples[i + 1];
+        const ax = a.lon * cosLat, ay = a.lat;
+        const dx = b.lon * cosLat - ax, dy = b.lat - ay;
+        const len2 = dx * dx + dy * dy;
+        const t = len2 ? Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / len2)) : 0;
+        const ex = ax + t * dx - px, ey = ay + t * dy - py;
+        const d2 = ex * ex + ey * ey;
         if (d2 < bestD) {
             bestD = d2;
             best = i;
         }
     }
-    return Math.min(best, road.samples.length - 2);
+    return best;
 }
 
 // Merge consecutive segments that land in the same color bin (~1% grade), so
@@ -331,21 +346,26 @@ function colorChunks(road, splitAt) {
     }
     // Close short low-grade runs flanked by painted segments on both sides: a
     // 50 m crest flat shouldn't visually sever one continuous hill. Closed
-    // gaps get exactly GRADE_MIN — the ramp's palest step.
-    let gapStart = -1;
-    for (let k = 0; k <= paint.length; k++) {
-        const low = k < paint.length && paint[k] < GRADE_MIN;
-        if (low && gapStart < 0) {
-            gapStart = k;
-        }
-        else if (!low && gapStart >= 0) {
-            // Snap to the nearest whole segment: a 4-segment flat at 25.03 m
-            // spacing (100.1 m) should close like the 100 m it nominally is.
-            if (gapStart > 0 && k < paint.length && samples[k].d - samples[gapStart].d <= GAP_CLOSE_M + SAMPLE_STEP / 2) {
-                for (let m = gapStart; m < k; m++)
-                    paint[m] = GRADE_MIN;
+    // gaps get exactly GRADE_MIN — the ramp's palest step. Skipped for roads
+    // evaluated per-segment (window of one ~25 m segment): each segment stands
+    // alone there, so there's no window-length hill to keep continuous, and
+    // closing would paint genuinely gentle road between isolated steep flecks.
+    if ((road.window ?? Infinity) > SAMPLE_STEP) {
+        let gapStart = -1;
+        for (let k = 0; k <= paint.length; k++) {
+            const low = k < paint.length && paint[k] < GRADE_MIN;
+            if (low && gapStart < 0) {
+                gapStart = k;
             }
-            gapStart = -1;
+            else if (!low && gapStart >= 0) {
+                // Snap to the nearest whole segment: a 4-segment flat at 25.03 m
+                // spacing (100.1 m) should close like the 100 m it nominally is.
+                if (gapStart > 0 && k < paint.length && samples[k].d - samples[gapStart].d <= GAP_CLOSE_M + SAMPLE_STEP / 2) {
+                    for (let m = gapStart; m < k; m++)
+                        paint[m] = GRADE_MIN;
+                }
+                gapStart = -1;
+            }
         }
     }
     const bin = v => Math.min(BINS, Math.round(((v - GRADE_MIN) / (GRADE_MAX - GRADE_MIN)) * BINS));

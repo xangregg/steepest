@@ -185,6 +185,7 @@ function render() {
         r.segs = segmentSustained(r.samples, r.elev, windowM);
         r.value = r.segs ? r.segs.reduce((m, v) => Math.max(m, v), 0) : null;
         r.window = windowM; // the sustained length this road's segs/value use
+        r.fullSegs = undefined; // set on per-segment-colored roads (sustained mode)
         r.paint = null;
         r.topExtents = null;
         r.listed = false; // set on listed roads (they wear red on the map vs violet)
@@ -282,18 +283,19 @@ function render() {
             if (entries.length >= listMax)
                 break;
         }
-        // "Other steep" (non-listed) roads count at half the sustained length, so
-        // a short steep pitch still shows in violet even when it's too short — or
+        // "Other steep" (non-listed) roads have no length threshold: any single
+        // ~25 m segment at ≥ 5 % shows in violet, even on a road too short — or
         // not steep enough over the full window — to make the list. Re-evaluate
-        // them at the half window (both coloring and inclusion); each road keeps
-        // its window so the popup labels the grade honestly. Roads with no ≥ 5 %
-        // stretch there aren't drawn (nothing to show).
-        const halfWindow = windowM / 2;
+        // them at per-segment grades (both coloring and inclusion). The full-
+        // window segs move to fullSegs so the popup can still report the
+        // sustained grade at the chosen length — how far the spot falls short
+        // of qualifying — instead of repeating the segment's own grade.
         for (const r of withFields) {
             if (r.listed)
                 continue;
-            r.segs = segmentSustained(r.samples, r.elev, halfWindow);
-            r.window = halfWindow;
+            r.fullSegs = r.segs; // null when the road is shorter than the window
+            r.segs = segmentSustained(r.samples, r.elev, SAMPLE_STEP);
+            r.window = SAMPLE_STEP;
             r.value = r.segs ? r.segs.reduce((m, v) => Math.max(m, v), 0) : null;
         }
         drawn = withFields.filter(r => r.listed || (r.value != null && r.value >= GRADE_MIN));
@@ -430,7 +432,11 @@ darkQuery.addEventListener('change', () => {
 //   steepest.ramp({ hue: 'violet', dark: { mid: '#9a6cff' } })
 //   steepest.width({ refZoom: 14, zoomStep: 1.3, factorMin: 0.25, factorMax: 8, curvyMax: 1, curvyTurn: 0.025 })
 //   steepest.curviness()  // table of roads by curviness + which are "curvy"
+//   steepest.map           // the Leaflet map (e.g. steepest.map.setView(...))
 window.steepest = {
+    get map() {
+        return map;
+    },
     grind(opts) {
         setGrindStyle(opts);
         render();
