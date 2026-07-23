@@ -43,7 +43,7 @@ const bore = prepareRoads([
     tunnelWay,
     way(7, 'Bore St', [[35.002, -77], [35.003, -77]]),
 ]);
-import { resample, analyzeRoad, segmentSustained, sustainedGrade, bestSustainedWindow, sustainedStretches, hardestClimb, hardestClimbs, grindMask, longestIncline, longestInclinePaths, SAMPLE_STEP } from '../metrics.js';
+import { resample, analyzeRoad, segmentSustained, sustainedGrade, bestSustainedWindow, sustainedStretches, hardestClimb, hardestClimbs, grindMask, longestIncline, longestInclines, longestInclinePaths, SAMPLE_STEP } from '../metrics.js';
 import { abbrevName, shortLabel } from '../render.js';
 import { buildCsv, csvFilename } from '../csv.js';
 
@@ -268,8 +268,17 @@ assert(gap.length >= 1 && gap.every(k => Math.abs(k - midSeg) < 4),
 const li = longestIncline(flat, mkElev(d => d * 0.03), 1000);
 assert(li && li.span > 900 && Math.abs(li.grade - 0.03) < 0.006, `longest incline ${li && li.span.toFixed(0)} m @ ${li && (li.grade * 100).toFixed(1)}%`);
 assert(longestIncline(flat, mkElev(d => d * 0.01), 1000) === null, 'no qualifying incline -> null');
-const vLong = longestIncline(vRoad, analyzeRoad(vRoad, vRoad.map(s => Math.abs(s.d - 1500) * 0.03)).elev, 1000);
+const vElev = analyzeRoad(vRoad, vRoad.map(s => Math.abs(s.d - 1500) * 0.03)).elev;
+const vLong = longestIncline(vRoad, vElev, 1000);
 assert(vLong && vLong.span > 1000, `V road's longest incline side is ~1.5 km (${vLong && vLong.span.toFixed(0)} m)`);
+// Both sides of the V qualify individually — two opposite-direction inclines
+// meeting at the valley floor each rank, on the same road.
+const vBoth = longestInclines(vRoad, vElev, 1000);
+assert(vBoth.length === 2 && vBoth.every(r => r.span > 1000),
+    `V road reports both sides (${vBoth.map(r => r.span.toFixed(0)).join(', ')} m)`);
+const vPicked = longestInclinePaths([{ id: 'v', name: 'V Rd', unnamed: false, samples: vRoad, elev: vElev }], 1000, 1);
+assert(vPicked.length === 2 && vPicked[0].roads[0] === vPicked[1].roads[0],
+    `one road can rank two inclines (${vPicked.length} found)`);
 
 // Multi-road inclines: two ~600 m roads meeting end-to-end, elevation climbing
 // straight through the join. Neither is a 1 km incline alone, but together they

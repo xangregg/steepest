@@ -71,8 +71,11 @@ Code and docs were largely written using Claude Code (Fable 5 and Opus 4.8).
      from coincident sample points, so it handles a road ending mid-way along the
      next) and reported as one incline, e.g. "Burrell Mountain Rd + Whitmire St".
      A bounded search over chained road slices runs the same grind rule on each
-     chain's combined elevation profile; results are de-duplicated so no road
-     appears in two, and a multi-road incline supersedes its single-road pieces.
+     chain's combined elevation profile; results are de-duplicated by physical
+     extent — no stretch of pavement appears in two inclines, and a multi-road
+     incline supersedes its single-road pieces — but a road with several
+     distinct inclines ranks each one, so two inclines climbing away from a
+     valley floor (or meeting at a summit) both appear.
 
    Changing mode or window re-ranks instantly from cached elevation profiles.
 5. **Caching** — processed results (roads with elevation profiles) are cached
