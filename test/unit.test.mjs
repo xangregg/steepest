@@ -43,7 +43,7 @@ const bore = prepareRoads([
     tunnelWay,
     way(7, 'Bore St', [[35.002, -77], [35.003, -77]]),
 ]);
-import { resample, analyzeRoad, segmentSustained, sustainedGrade, bestSustainedWindow, hardestClimb, hardestClimbs, grindMask, longestIncline, longestInclinePaths, SAMPLE_STEP } from '../metrics.js';
+import { resample, analyzeRoad, segmentSustained, sustainedGrade, bestSustainedWindow, sustainedStretches, hardestClimb, hardestClimbs, grindMask, longestIncline, longestInclinePaths, SAMPLE_STEP } from '../metrics.js';
 import { abbrevName, shortLabel } from '../render.js';
 import { buildCsv, csvFilename } from '../csv.js';
 
@@ -133,6 +133,44 @@ const bw = bestSustainedWindow(flat, analyzeRoad(flat, hill).elev, 100);
 assert(Math.abs(bw.grade - sustainedGrade(flat, analyzeRoad(flat, hill).elev, 100)) < 1e-12,
     `best window grade equals ranking value (${(bw.grade * 100).toFixed(1)}%)`);
 assert(bw.i < bw.j && flat[bw.i].d >= 490, `best window is in the steep half (starts at ${flat[bw.i].d.toFixed(0)} m)`);
+
+// sustainedStretches: distinct steep sections (warm runs of the window
+// metric) rank separately; a uniform hill is ONE stretch, and a road whose
+// best falls below the threshold still yields its single best window.
+{
+    const long = resample([{ lat: 35, lon: -82.6 }, { lat: 35.027, lon: -82.6 }]); // ~3 km due north
+    // Two steep sections (10% and 7%, ~700 m each) separated by ~800 m of flat.
+    const twoElev = analyzeRoad(long, long.map(s =>
+        s.d < 700 ? s.d * 0.10 :
+        s.d < 1500 ? 70 :
+        s.d < 2200 ? 70 + (s.d - 1500) * 0.07 : 119)).elev;
+    const two = sustainedStretches(long, twoElev, 250, 0.05);
+    assert(two.length === 2, `two separated sections -> two stretches (got ${two.length})`);
+    assert(Math.abs(two[0].grade - 0.10) < 0.01 && Math.abs(two[1].grade - 0.07) < 0.01,
+        `stretches steepest-first: ${(two[0].grade * 100).toFixed(1)}%, ${(two[1].grade * 100).toFixed(1)}%`);
+    assert(two[0].j <= two[1].i || two[1].j <= two[0].i, 'stretch extents do not overlap');
+    const uniform = sustainedStretches(long, analyzeRoad(long, long.map(s => s.d * 0.08)).elev, 250, 0.05);
+    assert(uniform.length === 1, `a uniformly steep road is one stretch (got ${uniform.length})`);
+    const gentle = sustainedStretches(long, analyzeRoad(long, long.map(s => s.d * 0.03)).elev, 250, 0.05);
+    assert(gentle.length === 1 && Math.abs(gentle[0].grade - 0.03) < 0.005,
+        `below-threshold road falls back to its best window (${(gentle[0].grade * 100).toFixed(1)}%)`);
+    // Within ONE warm run (nothing dips under 5%), a marked dip in the window
+    // grade splits stretches by prominence: 10% and 9% hills joined by a 5.5%
+    // saddle are two stretches...
+    const dipElev = analyzeRoad(long, long.map(s =>
+        s.d < 500 ? s.d * 0.10 :
+        s.d < 1500 ? 50 + (s.d - 500) * 0.055 :
+        s.d < 2000 ? 105 + (s.d - 1500) * 0.09 : 150)).elev;
+    const dipped = sustainedStretches(long, dipElev, 250, 0.05);
+    assert(dipped.length === 2 && Math.abs(dipped[0].grade - 0.10) < 0.01 && Math.abs(dipped[1].grade - 0.09) < 0.01,
+        `in-run dip splits stretches (got ${dipped.map(s => (s.grade * 100).toFixed(1) + '%').join(', ')})`);
+    // ...while a mere shoulder (10% easing to 9%, no dip) stays one stretch.
+    const shoulderElev = analyzeRoad(long, long.map(s =>
+        s.d < 500 ? s.d * 0.10 : s.d < 1500 ? 50 + (s.d - 500) * 0.09 : 140)).elev;
+    const shoulder = sustainedStretches(long, shoulderElev, 250, 0.05);
+    assert(shoulder.length === 1,
+        `a shoulder without a dip is one stretch (got ${shoulder.map(s => (s.grade * 100).toFixed(1) + '%').join(', ')})`);
+}
 
 // Length thresholds snap to the nearest whole segment: a 10-segment run
 // summing 249 m counts for a 250 m window (the alternative is a 274 m window

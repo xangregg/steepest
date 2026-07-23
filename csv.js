@@ -1,7 +1,7 @@
 // CSV export of the current ranking. Columns differ by mode (the user gets
 // what's relevant to how it was ranked): climb rows carry the climb's
-// score/gain and its bottom/top endpoints; sustained rows carry the road's
-// best-window endpoints. Coordinates are the ~25 m sample points bracketing the
+// score/gain and its bottom/top endpoints; sustained rows carry each ranked
+// stretch's endpoints. Coordinates are the ~25 m sample points bracketing the
 // ranked stretch, with their DEM elevations. Pure and stringly, so unit-tested.
 
 import { bestSustainedWindow } from './metrics.js';
@@ -48,11 +48,13 @@ export function buildCsv({ entries, rankMode, windowM }) {
     else {
         rows.push(['rank', 'name', 'grade_pct', 'window_m', 'road_length_m',
             'start_lat', 'start_lon', 'start_elev_m', 'end_lat', 'end_lon', 'end_elev_m']);
-        entries.forEach(({ road }, idx) => {
-            const w = bestSustainedWindow(road.samples, road.elev, windowM);
+        entries.forEach(({ road, stretch }, idx) => {
+            // Rows are stretches (a road can list several); entries without one
+            // fall back to the road's best window.
+            const w = stretch ?? bestSustainedWindow(road.samples, road.elev, windowM);
             const i = w ? w.i : 0;
             const j = w ? w.j : road.samples.length - 1;
-            rows.push([idx + 1, road.name, (road.value * 100).toFixed(3), Math.round(windowM), road.length.toFixed(3),
+            rows.push([idx + 1, road.name, ((w ? w.grade : road.value) * 100).toFixed(3), Math.round(windowM), road.length.toFixed(3),
                 ...endpoint(road, i), ...endpoint(road, j)]);
         });
     }

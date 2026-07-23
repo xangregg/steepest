@@ -238,6 +238,85 @@ export function bestSustainedWindow(samples, elev, windowM) {
     return best;
 }
 
+// Within one warm run, a second stretch is distinct only when the window
+// grade between the peaks dips below this fraction of the weaker peak — a
+// uniformly steep hill (no dip) stays ONE stretch, a hill-dip-hill run splits.
+// Exported because the map uses the same fraction to extend a ranked
+// stretch's red into its shoulders (see app.js): what isn't distinct enough
+// to rank separately shouldn't read as a separate (violet) section either.
+export const STRETCH_COL_FRAC = 0.8;
+
+// A road's distinct ranked stretches. The road splits at "cold" segments
+// (sustained value below minGrade — exactly where the map coloring goes
+// silent) into warm runs; any window averaging >= minGrade lies wholly inside
+// one warm run (every segment it covers inherits at least its grade). Within
+// a run, candidate windows are taken steepest-first, and a later window
+// counts as a separate stretch only if it doesn't overlap a chosen one and
+// the col between them clears the STRETCH_COL_FRAC prominence test above.
+// Falls back to the single best window when nothing clears minGrade, so
+// gentle towns still rank their best roads. Steepest first, capped at
+// maxCount (like the road's climbs).
+export function sustainedStretches(samples, elev, windowM, minGrade, maxCount = 3) {
+    const segs = segmentSustained(samples, elev, windowM);
+    if (!segs)
+        return [];
+    const bound = windowM - SAMPLE_STEP / 2;
+    // All minimal windows using only samples a..b, steepest first.
+    const windowsWithin = (a, b) => {
+        const cands = [];
+        let j = a;
+        for (let i = a; i < b; i++) {
+            if (j <= i)
+                j = i + 1;
+            while (j < b && samples[j].d - samples[i].d < bound)
+                j++;
+            const span = samples[j].d - samples[i].d;
+            if (span < bound)
+                break;
+            cands.push({ i, j, grade: Math.abs(elev[j] - elev[i]) / span, span });
+        }
+        return cands.sort((x, y) => y.grade - x.grade);
+    };
+    // Greedy prominence pick within one warm run (samples a..b).
+    const pickRun = (a, b, out) => {
+        const chosen = [];
+        for (const w of windowsWithin(a, b)) {
+            if (chosen.length >= maxCount)
+                break;
+            const distinct = chosen.every(c => {
+                if (w.i < c.j && c.i < w.j)
+                    return false; // overlaps a chosen stretch
+                const [L, R] = w.j <= c.i ? [w, c] : [c, w];
+                let col = Infinity;
+                for (let k = L.j; k < R.i; k++)
+                    col = Math.min(col, segs[k]);
+                return col <= STRETCH_COL_FRAC * Math.min(w.grade, c.grade);
+            });
+            if (distinct)
+                chosen.push(w);
+        }
+        out.push(...chosen);
+    };
+    const out = [];
+    let a = -1;
+    for (let k = 0; k <= segs.length; k++) {
+        const warm = k < segs.length && segs[k] >= minGrade;
+        if (warm && a < 0) {
+            a = k;
+        }
+        else if (!warm && a >= 0) {
+            pickRun(a, k, out);
+            a = -1;
+        }
+    }
+    if (!out.length) {
+        const best = windowsWithin(0, samples.length - 1)[0];
+        return best ? [best] : [];
+    }
+    out.sort((x, y) => y.grade - x.grade);
+    return out.slice(0, maxCount);
+}
+
 const DIP_ABS = 2;       // m of counter-slope always forgiven (DEM noise)
 const DIP_FRAC = 0.10;   // ... or up to this fraction of the total ascent
 export const GRIND_MIN_GRADE = 0.025; // a long incline counts from this average grade
