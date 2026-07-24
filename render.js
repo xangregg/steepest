@@ -2,11 +2,11 @@
 //
 // Roads draw as mitered ribbon polygons (not stroked lines), split into
 // constant-color chunks. Color: two-segment sequential ramps over a fixed
-// 5–25 % grade domain, interpolated in Oklab so equal grade steps read as
+// 3–25 % grade domain, interpolated in Oklab so equal grade steps read as
 // equal color steps (perceptually uniform within each segment). Each ramp runs
 // pale → full-chroma at GRADE_BREAK (12 %) → deep, so a road's steepest pitches
 // stand out from its merely-steep ones. In climb mode, red for the listed
-// top-N roads' climbs and violet for other steep stretches; below 5 % nothing
+// top-N roads' climbs and violet for other steep stretches; below 3 % nothing
 // is painted (short crest gaps
 // close at the palest step). Each segment's color is capped at its own local
 // grade so paint never claims steepness the ground doesn't have. Width flares
@@ -22,7 +22,7 @@
 
 import { haversine, SAMPLE_STEP, GRIND_MIN_GRADE } from './metrics.js';
 
-export const GRADE_MIN = 0.05; // below this a segment gets no highlight at all
+export const GRADE_MIN = 0.03; // below this a segment gets no highlight at all
 export const GRADE_BREAK = 0.12; // grade where the ramp reaches full-chroma color
 export const GRADE_MAX = 0.25; // ramp bottoms out (deepest color) at a 25% grade
 
@@ -48,7 +48,7 @@ export const RAMPS_ALT = {
 };
 
 // Categorical (non-gradient) color for long-incline stretches — mostly
-// monotonic inclines of >= 2%. Drawn as a continuous translucent amber
+// monotonic inclines of >= 3%. Drawn as a continuous translucent amber
 // underlay beneath the steepness ribbons, mostly obscured where steep colors
 // sit on top, peeking out where the incline ribbon runs wider.
 export const GRIND_COLORS = { light: '#dd9922', dark: '#e9b04a' };
@@ -345,7 +345,7 @@ function colorChunks(road, splitAt) {
     // doesn't bleed past where a hill really ends. An explicit paint floor
     // (climb/incline extents) keeps at least the palest step across gentle
     // interior segments — a ranked extent reads continuously, like closed
-    // gaps, even where the road is briefly flat or the incline sits under 5 %.
+    // gaps, even where the road is briefly flat or the incline sits under 3 %.
     const paint = Float64Array.from(base);
     for (let k = 0; k < paint.length; k++) {
         const local = Math.abs(elev[k + 1] - elev[k]) / (samples[k + 1].d - samples[k].d);
@@ -411,7 +411,11 @@ const WIDTH_MIN = 3.5;    // px ribbon width at a run's lowest altitude (zoom-in
 // So the flare scales with zoom: WIDTH_PER_M and the cap apply as-is at
 // WIDTH_REF_ZOOM, then grow by WIDTH_ZOOM_STEP per level above it, clamped so
 // they neither shrink below the reference nor balloon over neighbours far in.
-let WIDTH_PER_M = 0.15;   // extra px of flare per meter of altitude, at WIDTH_REF_ZOOM
+let WIDTH_PER_M = 0.12;   // extra px of flare per meter of altitude, at WIDTH_REF_ZOOM
+                          // (~88 m of gain to reach WIDTH_MAX; lowered from 0.15 once the
+                          // 3% floor made climbs longer and the old rate capped fast). Tuned
+                          // for normal-relief towns; very hilly cities (San Francisco) are
+                          // exceptional and still peg the cap, which is an acceptable trade.
 let WIDTH_MAX = 14;       // px total-width cap, at WIDTH_REF_ZOOM
 let WIDTH_REF_ZOOM = 14;  // below/at this zoom the flare is unchanged from before
 let WIDTH_ZOOM_STEP = 1.3;

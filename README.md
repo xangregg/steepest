@@ -44,7 +44,7 @@ Code and docs were largely written using Claude Code (Fable 5 and Opus 4.8).
      Rows are *stretches*, not whole roads: a road with several steep sections
      can take several list spots — each section's best window competes on its
      own, up to three per road. Sections split where the metric drops below
-     the 5 % display floor, or at a marked dip within a steep run (the window
+     the 3 % display floor, or at a marked dip within a steep run (the window
      grade falling below ~80 % of the weaker section — a prominence test, so a
      uniformly steep hill or a mere shoulder still yields one row). Same-name
      entries from parallel chains are deduped geographically.
@@ -63,7 +63,7 @@ Code and docs were largely written using Claude Code (Fable 5 and Opus 4.8).
      geographically, so parallel carriageways still yield one row per
      physical climb).
    - **Longest incline**: the length of the longest long-incline run — the same
-     mostly-monotonic, ≥ 2.5 % stretches (of at least the "long incline" length)
+     mostly-monotonic, ≥ 3 % stretches (of at least the "long incline" length)
      that get the amber underlay described below. Ranks by how far the hill goes
      rather than how steep it gets. An incline may span several **connected
      roads** (the "over N roads" knob): a climb that continues across a junction
@@ -83,16 +83,16 @@ Code and docs were largely written using Claude Code (Fable 5 and Opus 4.8).
    Overpass and tile sampling entirely; a "refresh from OSM" link in the status
    line forces a refetch. Geocode lookups are cached in localStorage.
 6. **Rendering** — Leaflet (canvas renderer) with a CARTO basemap; roads are
-   colored on a fixed 5–25 % single-hue color gradient so colors mean the same
+   colored on a fixed 3–25 % single-hue color gradient so colors mean the same
    thing in every town. Coloring is localized: each ~25 m segment is colored by
-   the steepest window-length stretch it belongs to, and stretches under 5 %
+   the steepest window-length stretch it belongs to, and stretches under 3 %
    get no highlight at all — so the map shows where the hills are, and a long
    road fades in and out with its actual climbs instead of wearing its single
    best grade everywhere. Long inclines — mostly monotonic stretches at least
-   the "long incline" length (default 800 m), averaging ≥ 2.5 % — are drawn as a
+   the "long incline" length (default 800 m), averaging ≥ 3 % — are drawn as a
    continuous
    translucent amber underlay beneath the steepness ribbons, so a mile-long
-   2.5 % incline is acknowledged instead of invisible; its width flare
+   3 % incline is acknowledged instead of invisible; its width flare
    accumulates over the whole incline, unbroken by whatever steep colors sit
    on top. An incline that runs across junctions onto connected roads (up to the
    "over N roads" count) is drawn as one unbroken amber ribbon — via a synthetic
@@ -100,27 +100,28 @@ Code and docs were largely written using Claude Code (Fable 5 and Opus 4.8).
    reflects the same multi-road inclines the incline ranking finds. In
    hardest-climb mode, the listed (top-N) roads' climbs wear the
    red gradient while all other steep stretches use a contrasting violet
-   gradient (same 5–25 % scale), so map color mirrors the ranking. A winning
+   gradient (same 3–25 % scale), so map color mirrors the ranking. A winning
    climb is also kept visually continuous: any flat or gentle stretch inside
    it is colored as if it had the climb's average grade, so a breather
    mid-climb doesn't punch a hole in the highlight (the popup still reports
    the true local grade). Steepest mode uses the same red/violet split, with
    red marking each **ranked stretch**, extended along its shoulders —
    connected segments whose sustained grade stays within the same ~80 %
-   prominence fraction of the stretch's own (and above 5 %) — so
+   prominence fraction of the stretch's own (and above 3 %) — so
    nearly-as-steep road on either side reads as part of the red section
    rather than a violet fringe, while the genuinely lesser rest of the road
    goes violet like any other steep road (the width flare still runs
    continuously across the color change). The violet "other steep" roads have **no length
-   threshold** — any single ~25 m segment at ≥ 5 % shows — so a short steep
+   threshold** — any single ~25 m segment at ≥ 3 % shows — so a short steep
    pitch (too short to rank, or that the full window averages away) still
    appears, without changing which roads make the list (a clicked segment's
    popup reports both its own grade and the sustained grade at the chosen
    length, showing how far it falls short of ranking). Longest-incline mode
    follows the same pattern: each ranked incline's exact extent — across every
    road it spans, including short connectors — wears the red gradient, floored
-   at the palest red where the incline's grade sits below the 5 % color scale
-   (inclines only need 2.5 %), largely covering its amber underlay; every
+   at the palest red where the incline's grade sits below the 3 % color scale
+   (an incline averages ≥ 3 %, but its gentler segments can dip under), largely
+   covering its amber underlay; every
    other steep road stays violet, and popups keep reporting true grades. The sidebar bar chart shares the color gradient and
    doubles as the ranked list; hover to highlight on the map, click to zoom.
    A "Download CSV" button exports the current ranking — including begin/end

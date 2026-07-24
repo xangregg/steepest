@@ -236,13 +236,13 @@ assert(multi[0].score >= multi[1].score, 'climbs come best first');
 assert(multi.every((a, x) => multi.every((b, y) => x === y || a.j <= b.i || b.j <= a.i)),
     'climb extents do not overlap');
 
-// Grind mask: a 3% monotonic km qualifies (span threshold 1000 m); a 1% km and
-// a 2.4% km (just under the 2.5% GRIND_MIN_GRADE) don't, nor does a rolling
+// Grind mask: a 4% monotonic km qualifies (span threshold 1000 m); a 1% km and
+// a 2.4% km (just under the 3% GRIND_MIN_GRADE) don't, nor does a rolling
 // profile with real dips.
-const grind = grindMask(flat, mkElev(d => d * 0.03), 1000);
-assert(grind && grind.reduce((s, v) => s + v, 0) >= flat.length - 3, 'steady 3% km is a grind');
+const grind = grindMask(flat, mkElev(d => d * 0.04), 1000);
+assert(grind && grind.reduce((s, v) => s + v, 0) >= flat.length - 3, 'steady 4% km is a grind');
 assert(grindMask(flat, mkElev(d => d * 0.01), 1000) === null, '1% km is not a grind');
-assert(grindMask(flat, mkElev(d => d * 0.024), 1000) === null, '2.4% km is below the 2.5% threshold -> not a grind');
+assert(grindMask(flat, mkElev(d => d * 0.024), 1000) === null, '2.4% km is below the 3% threshold -> not a grind');
 assert(grindMask(flat, mkElev(d => d * 0.03 + 8 * Math.sin(d / 50)), 1000) === null,
     'rolling profile with real dips is not a grind');
 // Flat-then-wall: the qualifying 1 km interval is half flat and half a 500 m

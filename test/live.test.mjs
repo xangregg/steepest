@@ -50,7 +50,11 @@ const rankAt = windowM => roads
 const ranked = rankAt(100);
 assert(ranked.length > 20, `${ranked.length} roads pass the 200 m minimum at window 100`);
 const topG = ranked[0].value;
-assert(topG > 0.04 && topG < 0.45, `top sustained-100 grade sane: ${(topG * 100).toFixed(1)}%`);
+// Ceiling raised to 50% for Master Drive (aka Masters Drive) in Brevard — a real,
+// remote mountain road (no Street View) that genuinely reads ~50% on some 100 m
+// stretches. Believable as terrain, though the coarse tiles likely inflate it a
+// little; this is a sanity bound, not a claim the grade is exact.
+assert(topG > 0.04 && topG <= 0.50, `top sustained-100 grade sane: ${(topG * 100).toFixed(1)}%`);
 
 // Longer windows can only lower (or hold) a road's sustained grade.
 const at400 = new Map(rankAt(400).map(r => [r.id, r.value]));
