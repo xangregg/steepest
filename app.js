@@ -22,7 +22,7 @@ import { parseLatLon, geocode, fetchRoads, prepareRoads } from './roads.js';
 import { elevatePoints } from './elevation.js';
 import { resample, analyzeRoad, segmentSustained, sustainedStretches, hardestClimbs, grindMask, longestInclinePaths, SAMPLE_STEP, STRETCH_COL_FRAC } from './metrics.js';
 import { initMap, drawRoads, renderList, setGrindStyle, setRampStyle, setWidthStyle, shortLabel, GRADE_MIN } from './render.js';
-import { searchKey, cacheGet, cachePut } from './cache.js';
+import { searchKey, cacheGet, cachePut, cacheStats, cacheClear } from './cache.js';
 import { buildCsv, csvFilename } from './csv.js';
 
 const byId = id => document.getElementById(id);
@@ -485,6 +485,31 @@ const wireDialog = (buttonId, dialogId) => {
 };
 wireDialog('howto', 'howto-dialog');
 wireDialog('credits', 'credits-dialog');
+
+// "Clear cache": report the current size and wipe the cached OSM/elevation data
+// on demand. Confirmation doubles as the size readout, so the number is shown at
+// the moment it matters. Best-effort — the cache silently rebuilds on next search.
+const fmtBytes = n =>
+    n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(0)} KB` : `${(n / 1048576).toFixed(1)} MB`;
+const flashBtn = (btn, msg) => {
+    const orig = btn.dataset.label ??= btn.textContent;
+    btn.textContent = msg;
+    btn.disabled = true;
+    setTimeout(() => { btn.textContent = orig; btn.disabled = false; }, 1600);
+};
+byId('clear-cache').addEventListener('click', async () => {
+    const btn = byId('clear-cache');
+    const { count, bytes } = await cacheStats();
+    if (!count) {
+        flashBtn(btn, 'Cache empty');
+        return;
+    }
+    const size = bytes != null ? ` (~${fmtBytes(bytes)} of site data)` : '';
+    const plural = count === 1 ? 'search' : 'searches';
+    if (!confirm(`Clear ${count} cached ${plural}${size}?\n\nEach will refetch from OpenStreetMap next time it's searched.`))
+        return;
+    flashBtn(btn, (await cacheClear()) ? 'Cache cleared' : 'Clear failed');
+});
 
 byId('controls').addEventListener('submit', e => {
     e.preventDefault();

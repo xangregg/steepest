@@ -52,6 +52,41 @@ export async function cacheGet(key) {
     }
 }
 
+// -> { count, bytes } for the "Clear cache" control. count is the exact number
+// of cached searches; bytes is the origin's storage estimate (dominated by this
+// IndexedDB, plus a little localStorage for geocodes) — browser-padded and
+// approximate, and null where the Storage API isn't available.
+export async function cacheStats() {
+    let count = 0, bytes = null;
+    try {
+        count = (await withStore('readonly', s => s.count())) ?? 0;
+    }
+    catch (err) {
+        console.warn('[cache] count failed:', err);
+    }
+    try {
+        if (navigator.storage?.estimate)
+            bytes = (await navigator.storage.estimate()).usage ?? null;
+    }
+    catch (err) {
+        console.warn('[cache] estimate failed:', err);
+    }
+    return { count, bytes };
+}
+
+// Wipe every cached search. -> true on success. The cache rebuilds itself on
+// the next search, so this is purely a "reclaim space now" action.
+export async function cacheClear() {
+    try {
+        await withStore('readwrite', s => s.clear());
+        return true;
+    }
+    catch (err) {
+        console.warn('[cache] clear failed:', err);
+        return false;
+    }
+}
+
 export async function cachePut(key, roads) {
     try {
         await withStore('readwrite', s => s.put({ version: VERSION_TAG, t: Date.now(), roads }, key));
