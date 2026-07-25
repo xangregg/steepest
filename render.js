@@ -243,37 +243,59 @@ export function shortLabel(label) {
         .join(', ');
 }
 
-// segK: index of the ~25 m sample segment nearest the click, when the popup
-// was opened by clicking the map (null when opened from the list).
-function popupHtml(road, stretchValue, windowM, segK) {
-    // Describe the climb containing the clicked segment if there is one,
-    // otherwise the road's hardest.
-    const climbs = road.climbs ?? [];
-    const containing = segK != null ? climbs.find(c => segK >= c.i && segK < c.j) : null;
-    const shown = containing ?? climbs[0];
-    const climbRow = shown
-        ? `<div class="popup-row"><span>${containing ? 'This climb' : 'Hardest climb'}</span><b>${fmtClimb(shown)}</b></div>`
-        : '';
-    let localRows;
+// Steepest ~25 m sample segment in [i, j) by the road's sustained grade (its
+// window segs, or the per-segment fallback on re-segmented violet roads). Used
+// to give a list-opened popup a representative spot, matching a map click there.
+function peakSeg(road, i, j) {
+    const segs = road.fullSegs ?? road.segs;
+    if (!segs)
+        return null;
+    let best = i, bv = -Infinity;
+    for (let k = i; k < j && k < segs.length; k++)
+        if (segs[k] > bv) {
+            bv = segs[k];
+            best = k;
+        }
+    return best;
+}
+
+// Deliberately spare: just the clicked segment's grade and the one container
+// that mode ranks (the sustained window here, the climb, or the long incline),
+// tagged with its city-wide rank when known. No whole-road stats — those lived
+// here before and drowned the local reading the click is asking about.
+//
+// segK: the ~25 m sample segment the popup describes — the one nearest a map
+// click, or the extent's peak for a list-opened popup (null only if neither is
+// available). stretchValue: the ranked stretch's grade, for a sustained
+// list-open with no segment. rankMode: which container to show.
+function popupHtml(road, stretchValue, windowM, segK, rankMode) {
+    const name = `<div class="popup-name">${esc(road.name)}</div>`;
+    let segRow = '';
     if (segK != null) {
         const s0 = road.samples[segK], s1 = road.samples[segK + 1];
-        const e0 = road.elev[segK], e1 = road.elev[segK + 1];
-        const g = Math.abs(e1 - e0) / (s1.d - s0.d);
-        localRows = `
-        <div class="popup-row popup-active"><span>This ${(s1.d - s0.d).toFixed(1)} m segment</span><b>${fmtPct(g)} · ${e0.toFixed(1)}→${e1.toFixed(1)} m</b></div>`;
-        // Per-segment-colored roads (sustained mode's violet) keep their
-        // full-window segs in fullSegs: the sustained row reports the grade at
-        // the chosen length — how far this spot falls short of qualifying for
-        // the ranking — rather than repeating the segment row above.
-        const susSegs = road.fullSegs !== undefined ? road.fullSegs : road.segs;
-        if (susSegs)
-            localRows += `
-        <div class="popup-row"><span>Sustained ${windowM} m here</span><b>${fmtPct(susSegs[segK])}</b></div>`;
-        else if (road.segs)
-            localRows += `
-        <div class="popup-row"><span>Sustained ${windowM} m here</span><b>road too short</b></div>`;
-        // When the click lands on a long incline, describe its whole run.
-        if (road.grind?.[segK]) {
+        const g = Math.abs(road.elev[segK + 1] - road.elev[segK]) / (s1.d - s0.d);
+        segRow = `<div class="popup-row popup-active"><span>This ${(s1.d - s0.d).toFixed(1)} m segment</span><b>${fmtPct(g)}</b></div>`;
+    }
+    // The ranked container this spot belongs to, and its rank when known.
+    // rankedSpans covers the whole field (not just the listed top-N), so the
+    // rank shows even for a stretch/climb/incline that didn't make the list.
+    const rk = segK != null
+        ? road.rankedSpans?.find(sp => segK >= sp.i && segK < sp.j)
+        : road.rankedSpans?.[0];
+    const rankTag = rk ? ` <span class="popup-rank">#${rk.rank}</span>` : '';
+    let containerRow = '';
+    if (rankMode === 'climb') {
+        const climbs = road.climbs ?? [];
+        const c = (segK != null ? climbs.find(cl => segK >= cl.i && segK < cl.j) : null) ?? climbs[0];
+        if (c)
+            containerRow = `<div class="popup-row"><span>This climb</span><b>${fmtClimb(c)}${rankTag}</b></div>`;
+    }
+    else if (rankMode === 'incline') {
+        if (rk)
+            // The whole incline (across every road it spans), carried on the span.
+            containerRow = `<div class="popup-row"><span>Long incline</span><b>${fmtClimb({ gain: rk.gain, span: rk.span, grade: rk.grade })}${rankTag}</b></div>`;
+        else if (segK != null && road.grind?.[segK]) {
+            // A long incline that didn't rank: describe its local run, no rank.
             let a = segK, b = segK;
             while (a > 0 && road.grind[a - 1])
                 a--;
@@ -281,18 +303,22 @@ function popupHtml(road, stretchValue, windowM, segK) {
                 b++;
             const span = road.samples[b + 1].d - road.samples[a].d;
             const gain = Math.abs(road.elev[b + 1] - road.elev[a]);
-            localRows += `
-        <div class="popup-row"><span>Long incline</span><b>${fmtClimb({ gain, span, grade: gain / span })}</b></div>`;
+            containerRow = `<div class="popup-row"><span>Long incline</span><b>${fmtClimb({ gain, span, grade: gain / span })}</b></div>`;
         }
     }
     else {
-        localRows = `
-        <div class="popup-row popup-active"><span>This stretch (sustained ${road.window ?? windowM} m)</span><b>${fmtPct(stretchValue)}</b></div>
-        <div class="popup-row"><span>Length</span><b>${fmtLen(road.length)}</b></div>`;
+        // Sustained: the grade of the chosen-length window centered here — for a
+        // violet spot, how far it falls short of ranking. fullSegs holds the
+        // window segs on re-segmented violet roads (segs went per-segment).
+        const susSegs = road.fullSegs !== undefined ? road.fullSegs : road.segs;
+        if (segK != null)
+            containerRow = susSegs
+                ? `<div class="popup-row"><span>Sustained ${windowM} m here</span><b>${fmtPct(susSegs[segK])}${rankTag}</b></div>`
+                : `<div class="popup-row"><span>Sustained ${windowM} m here</span><b>road too short</b></div>`;
+        else
+            containerRow = `<div class="popup-row"><span>Sustained ${road.window ?? windowM} m</span><b>${fmtPct(stretchValue)}${rankTag}</b></div>`;
     }
-    return `<div class="popup"><div class="popup-name">${esc(road.name)}</div>${localRows}
-        <div class="popup-row"><span>Road best</span><b>${fmtPct(road.value)}</b></div>${climbRow}
-        <div class="popup-row"><span>Elevation</span><b>${Math.round(road.eMin)}–${Math.round(road.eMax)} m</b></div></div>`;
+    return `<div class="popup">${name}${segRow}${containerRow}</div>`;
 }
 
 // Nearest sample segment to a clicked point (planar approximation is plenty
@@ -854,7 +880,7 @@ export function drawRoads(map, ranked, windowM, mode, rankMode = 'sustained') {
             poly.bindPopup(() => {
                 const k = clickK;
                 clickK = null;
-                return popupHtml(road, stretchValue, windowM, k);
+                return popupHtml(road, stretchValue, windowM, k, rankMode);
             });
         };
         // Hue changes exactly at listed-extent boundaries (climb mode: listed
@@ -966,7 +992,9 @@ export function drawRoads(map, ranked, windowM, mode, rankMode = 'sustained') {
         fg.on('mouseover', () => setHighlight(road, true));
         fg.on('mouseout', () => setHighlight(road, false));
         fg.addTo(group);
-        lines.set(road, { skeleton, haloPolys, chunks, steepest, dp, haloSampleRanges });
+        // setClickK lets a list-opened popup (focus) name a representative
+        // segment, so it reads like a map click there rather than the null case.
+        lines.set(road, { skeleton, haloPolys, chunks, steepest, dp, haloSampleRanges, setClickK: k => { clickK = k; } });
     }
 
     // Pixel-based widths mean the ribbon geometry is zoom-dependent.
@@ -1010,10 +1038,14 @@ export function drawRoads(map, ranked, windowM, mode, rankMode = 'sustained') {
                 return;
             // Frame the given extent (a climb or an incline) if any, else the
             // whole road (sustained mode).
-            const pts = target
-                ? road.samples.slice(target.i, target.j + 1)
-                : road.samples;
+            const lastK = road.samples.length - 1;
+            const [lo, hi] = target ? [target.i, target.j] : [0, lastK];
+            const pts = road.samples.slice(lo, hi + 1);
             map.fitBounds(L.latLngBounds(pts.map(s => [s.lat, s.lon])).pad(0.3));
+            // Name the extent's steepest segment so the popup reads like a map
+            // click there (this-segment + its ranked container), not the bare
+            // list case.
+            e.setClickK?.(peakSeg(road, lo, hi));
             if (target) {
                 // Open the popup on the steepest drawn chunk within the climb.
                 let bestChunk = null;

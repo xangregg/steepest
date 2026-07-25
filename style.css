@@ -347,6 +347,8 @@ main { flex: 1; display: flex; min-height: 0; }
 .popup-row b { font-variant-numeric: tabular-nums; color: var(--ink); font-weight: 550; }
 .popup-active { color: var(--ink); font-weight: 600; }
 .popup-active b { color: var(--accent); }
+/* City-wide rank tag trailing a container value (e.g. "11.8% #14"). */
+.popup-rank { color: var(--ink-2); font-weight: 550; margin-left: 4px; }
 
 @media (max-width: 760px) {
     main { flex-direction: column; }

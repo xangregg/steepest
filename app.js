@@ -194,6 +194,7 @@ function render() {
         r.fullSegs = undefined; // set on per-segment-colored roads (sustained mode)
         r.paint = null;
         r.topExtents = null;
+        r.rankedSpans = null; // [{i, j, rank, ...}] city-wide rank of each ranked container, for the popup
         r.listed = false; // set on listed roads (they wear red on the map vs violet)
         return r;
     });
@@ -241,11 +242,11 @@ function render() {
             for (const c of r.climbs)
                 pool.push({ road: r, climb: c });
         pool.sort((a, b) => b.climb.score - a.climb.score);
-        entries = [];
+        // Rank the whole deduped field, not just the top-N shown, so a click on a
+        // climb below the list still reports its city-wide rank (rankedSpans).
+        const fullRanked = [];
         const keptByName = new Map();
         for (const e of pool) {
-            if (entries.length >= listMax)
-                break;
             if (!e.road.unnamed) {
                 const kept = keptByName.get(e.road.name) ?? [];
                 // Same-road entries are never duplicates (their extents are
@@ -257,8 +258,10 @@ function render() {
                 kept.push(e);
                 keptByName.set(e.road.name, kept);
             }
-            entries.push(e);
+            (e.road.rankedSpans ??= []).push({ i: e.climb.i, j: e.climb.j, rank: fullRanked.length + 1 });
+            fullRanked.push(e);
         }
+        entries = fullRanked.slice(0, listMax);
         // Listed climbs wear red on the map; everything else steep is violet,
         // so map color mirrors city-wide rank.
         for (const e of entries)
@@ -272,6 +275,19 @@ function render() {
         // extent's paint is floored at the palest step so the whole incline
         // reads red even where its grade sits below the 5 % color floor
         // (inclines only need 2.5 %); popups still report the true grades.
+        // Rank every incline (not just the listed top-N), carrying the whole
+        // incline's stats onto each constituent road's slice, so a click on a
+        // lower-ranked incline still shows its rank and its full run.
+        inclinePaths.forEach((incline, idx) => {
+            const stats = { rank: idx + 1, gain: incline.gain, span: incline.span, grade: incline.grade };
+            for (const s of incline.segs) {
+                const [i0, i1] = s.from <= s.to ? [s.from, s.to] : [s.to, s.from];
+                (s.r.rankedSpans ??= []).push({ i: i0, j: i1, ...stats });
+            }
+            // The virtual road (drawn over the real ones, so clicks tend to land
+            // on it) spans the whole incline, so its rank covers its full length.
+            incline.virtual.rankedSpans = [{ i: 0, j: incline.samples.length - 1, ...stats }];
+        });
         entries = inclinePaths.slice(0, listMax).map(incline => ({ incline }));
         for (const { incline } of entries) {
             for (const s of incline.segs) {
@@ -302,11 +318,11 @@ function render() {
             for (const s of sustainedStretches(r.samples, r.elev, windowM, GRADE_MIN, 3))
                 pool.push({ road: r, stretch: s });
         pool.sort((a, b) => b.stretch.grade - a.stretch.grade);
-        entries = [];
+        // Rank the whole deduped field, not just the top-N shown, so a click on a
+        // stretch below the list still reports its city-wide rank (rankedSpans).
+        const fullRanked = [];
         const keptByName = new Map();
         for (const e of pool) {
-            if (entries.length >= listMax)
-                break;
             if (!e.road.unnamed) {
                 const kept = keptByName.get(e.road.name) ?? [];
                 // Same-road stretches are never duplicates (disjoint along the
@@ -316,6 +332,11 @@ function render() {
                 kept.push(e);
                 keptByName.set(e.road.name, kept);
             }
+            (e.road.rankedSpans ??= []).push({ i: e.stretch.i, j: e.stretch.j, rank: fullRanked.length + 1 });
+            fullRanked.push(e);
+        }
+        entries = fullRanked.slice(0, listMax);
+        for (const e of entries) {
             // Sub-line: the climb containing this stretch (falling back to the
             // road's hardest) — its rise and length say more than the road
             // length did. Display-only; the bar and right-hand % show the
@@ -323,7 +344,6 @@ function render() {
             const climbs = (e.road.climbs ??= hardestClimbs(e.road.samples, e.road.elev, 3));
             const mid = (e.stretch.i + e.stretch.j) / 2;
             e.climb = climbs.find(c => mid >= c.i && mid <= c.j) ?? climbs[0] ?? null;
-            entries.push(e);
             e.road.listed = true;
             // The ranked stretch wears red, extended into its shoulders:
             // contiguous segments whose sustained grade stays within
