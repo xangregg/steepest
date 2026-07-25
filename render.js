@@ -433,17 +433,17 @@ const HALO_OPACITY = 0.35; // translucency of the hover glow over the basemap
 const HALO_MITER_MAX = 1;   // cap on the halo's miter widening so hairpins can't spike
 const RIBBON_MITER_MAX = 2; // same cap for the ribbon/underlay, looser so gentle
                             // bends keep parallel edges but hairpins can't spike
-const WIDTH_MIN = 3.5;    // px ribbon width at a run's lowest altitude (zoom-independent)
+const WIDTH_MIN = 3.0;    // px ribbon width at a run's lowest altitude (zoom-independent)
 // The altitude flare is a fixed pixel amount, so zooming in — where a segment
 // spans far more pixels than its width — makes the thin->thick cue hard to read.
 // So the flare scales with zoom: WIDTH_PER_M and the cap apply as-is at
 // WIDTH_REF_ZOOM, then grow by WIDTH_ZOOM_STEP per level above it, clamped so
 // they neither shrink below the reference nor balloon over neighbors far in.
-let WIDTH_PER_M = 0.12;   // extra px of flare per meter of altitude, at WIDTH_REF_ZOOM
-                          // (~88 m of gain to reach WIDTH_MAX; lowered from 0.15 once the
-                          // 3% floor made climbs longer and the old rate capped fast). Tuned
-                          // for normal-relief towns; very hilly cities (San Francisco) are
-                          // exceptional and still peg the cap, which is an acceptable trade.
+let WIDTH_PER_M = 0.14;   // extra px of flare per meter of altitude, at WIDTH_REF_ZOOM
+                          // (~79 m of gain to reach WIDTH_MAX). Paired with the low
+                          // WIDTH_MIN so the thin->thick cue reads clearly; tuned for
+                          // normal-relief towns, so very hilly cities (San Francisco) are
+                          // exceptional and still peg the cap, an acceptable trade.
 let WIDTH_MAX = 14;       // px total-width cap, at WIDTH_REF_ZOOM
 let WIDTH_REF_ZOOM = 14;  // below/at this zoom the flare is unchanged from before
 let WIDTH_ZOOM_STEP = 1.3;
