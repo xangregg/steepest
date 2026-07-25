@@ -45,7 +45,7 @@ Code and docs were largely written using Claude Code (Fable 5 and Opus 4.8).
 
    A bar chart shows the top-ranked roads; hover to highlight, click to zoom.
 5. **Draw** the roads colored by steepness and flared by relative altitude: red
-   for the ranked stretches, purple for others, with an amber underlay for long
+   for the ranked stretches, indigo for others, with an amber underlay for long
    inclines. Click a segment for exact grades.
 6. **Cache** the processed results so re-ranking is instant, encode the search in
    the URL for sharing, and export the ranking to CSV.
@@ -159,21 +159,21 @@ same grade in every town.
   incline. An incline crossing junctions onto connected roads is drawn as a
   single unbroken amber ribbon (a synthetic "virtual road" spanning its exact
   extent) in every mode, so the amber matches the inclines the ranking finds.
-- **Red marks the ranking, purple marks the rest.** In every mode the ranked
+- **Red marks the ranking, indigo marks the rest.** In every mode the ranked
   (top-N) extents wear the red gradient and all other steep road wears a
-  contrasting purple one (same 3–25 % scale), so map color mirrors the ranking.
+  contrasting indigo one (same 3–25 % scale), so map color mirrors the ranking.
   - *Hardest climb.* The listed climbs are red; each stays one unbroken band,
     its segments showing their own grades with any sub-3 % spot inside lifted to
     the palest step so the band never breaks.
   - *Steepest.* Red marks each ranked stretch, extended along its shoulders
     (connected segments whose sustained grade stays within ~80 % of the
     stretch's own, and above 3 %), so nearly-as-steep road on either side reads
-    as part of the red section rather than a purple fringe.
+    as part of the red section rather than an indigo fringe.
   - *Longest incline.* Each ranked incline's exact extent, across every road it
     spans, wears red (floored at the palest red where the incline's grade dips
     below the 3 % color scale), largely covering its amber underlay.
 - **Other steep roads have no length threshold.** Any single ~25 m segment at
-  ≥ 3 % shows in purple, so a short steep pitch too brief to rank still appears,
+  ≥ 3 % shows in indigo, so a short steep pitch too brief to rank still appears,
   without changing which roads make the list. Clicking a segment reports its own
   grade and the sustained grade at the chosen length, showing how far it falls
   short of ranking.

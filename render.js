@@ -6,7 +6,7 @@
 // equal color steps (perceptually uniform within each segment). Each ramp runs
 // pale → full-chroma at GRADE_BREAK (12 %) → deep, so a road's steepest pitches
 // stand out from its merely-steep ones. In climb mode, red for the listed
-// top-N roads' climbs and purple for other steep stretches. Coloring is fully
+// top-N roads' climbs and indigo for other steep stretches. Coloring is fully
 // segment-level: each ~25 m segment wears its own local grade, and below 3 % it
 // goes unpainted — except inside a ranked climb/incline/stretch, whose segments
 // are floored to the palest step so the band stays continuous. Width flares
@@ -69,10 +69,10 @@ export function setGrindStyle({ light, dark, opacity } = {}) {
         GRIND_OPACITY = opacity;
 }
 
-// Tweak ramp anchors live: hue 'red' (RAMPS) or 'purple' (RAMPS_ALT); light/dark
+// Tweak ramp anchors live: hue 'red' (RAMPS) or 'indigo' (RAMPS_ALT); light/dark
 // are partial { lo, mid, hi } patches merged into that mode's anchors.
 export function setRampStyle({ hue = 'red', light, dark } = {}) {
-    const target = hue === 'purple' ? RAMPS_ALT : RAMPS;
+    const target = hue === 'indigo' ? RAMPS_ALT : RAMPS;
     if (light)
         Object.assign(target.light, light);
     if (dark)
@@ -170,7 +170,7 @@ export function initMap(el, mode) {
         // Below the ticks and swatch-sized, so the % scale clearly doesn't
         // apply to the categorical grind color.
         const grindRow = `<div class="legend-row legend-grind"><div class="legend-swatch" style="background:${GRIND_COLORS[m]};opacity:${GRIND_OPACITY}"></div><span class="legend-label">long incline (≥${+(GRIND_MIN_GRADE * 100).toFixed(2)}%)</span></div>`;
-        // Every mode reserves red for the listed items and purple for the rest.
+        // Every mode reserves red for the listed items and indigo for the rest.
         // Sustained mode's red marks each listed road's ranked best stretch —
         // not the whole road — so the label says stretches, not roads.
         const noun = rankMode === 'climb' ? 'climbs' : rankMode === 'incline' ? 'inclines' : 'stretches';
@@ -246,7 +246,7 @@ export function shortLabel(label) {
 }
 
 // Steepest ~25 m sample segment in [i, j) by the road's sustained grade (its
-// window segs, or the per-segment fallback on re-segmented purple roads). Used
+// window segs, or the per-segment fallback on re-segmented indigo roads). Used
 // to give a list-opened popup a representative spot, matching a map click there.
 function peakSeg(road, i, j) {
     const segs = road.fullSegs ?? road.segs;
@@ -310,8 +310,8 @@ function popupHtml(road, stretchValue, windowM, segK, rankMode) {
     }
     else {
         // Sustained: the grade of the chosen-length window centered here — for a
-        // purple spot, how far it falls short of ranking. fullSegs holds the
-        // window segs on re-segmented purple roads (segs went per-segment).
+        // indigo spot, how far it falls short of ranking. fullSegs holds the
+        // window segs on re-segmented indigo roads (segs went per-segment).
         const susSegs = road.fullSegs !== undefined ? road.fullSegs : road.segs;
         if (segK != null)
             containerRow = susSegs
@@ -770,7 +770,7 @@ export function drawRoads(map, ranked, windowM, mode, rankMode = 'sustained') {
 
     // Draw order = add order on the shared canvas; later roads paint over
     // earlier ones. Draw the ranked roads (those with a red topExtents extent)
-    // last so they sit on top of the purple "other steep" roads and the incline
+    // last so they sit on top of the indigo "other steep" roads and the incline
     // virtuals wherever paths cross. A stable sort keeps the prior within-group
     // ordering intact.
     const drawOrder = [...ranked].reverse()
@@ -910,14 +910,14 @@ export function drawRoads(map, ranked, windowM, mode, rankMode = 'sustained') {
         }
 
         // Group contiguous chunks into runs — across hue changes, so one hill
-        // that switches red/purple mid-slope keeps a single width flare instead
+        // that switches red/indigo mid-slope keeps a single width flare instead
         // of resetting at each color boundary. Each run's width starts at
         // WIDTH_MIN at its own lowest altitude, so thin -> thick = uphill.
         const runs = [];
         for (const chunk of colorChunks(road, split)) {
             // Red is reserved for the ranked (top-N) extents — climb mode's
             // listed climbs, sustained mode's listed best windows — so map
-            // color mirrors the ranking; everything else steep is purple.
+            // color mirrors the ranking; everything else steep is indigo.
             // Incline mode has no extents: every listed road wears red whole.
             chunk.prominent = road.topExtents
                 ? road.topExtents.some(([ci, cj]) => chunk.kStart >= ci && chunk.kStart < cj)
