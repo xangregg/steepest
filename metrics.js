@@ -99,7 +99,7 @@ function deckElevations(samples, elevs) {
 
 // A drivable road never exceeds ~37% (Ffordd Pen Llech, briefly the world's
 // steepest street); a steeper "segment" is a DEM artifact — most often a seam
-// between source datasets that a road weaves across, reading tens of metres too
+// between source datasets that a road weaves across, reading tens of meters too
 // high or low on one side. Any segment beyond this is impossible, i.e. bad data.
 const MAX_GRADE_PLAUSIBLE = 0.60;
 // Farthest such an artifact excursion is bridged across (a road can dip into and

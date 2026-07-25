@@ -186,7 +186,7 @@ export function initMap(el, mode) {
 const fmtPct = g => `${(g * 100).toFixed(1)}%`;
 const fmtLen = m => m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${Math.round(m)} m`;
 // Compact rise/run form (↑43m/299m ≈ 14.3%): wraps less than "↑43 m @ 14.3%
-// over 299 m" in the narrow list, and with both lengths in metres the ratio
+// over 299 m" in the narrow list, and with both lengths in meters the ratio
 // reads directly as the grade. The ≈ (not =) is honest: the shown lengths are
 // rounded, so they don't divide to exactly the displayed grade. Shared by the
 // list rows and the map popup.
@@ -438,7 +438,7 @@ const WIDTH_MIN = 3.5;    // px ribbon width at a run's lowest altitude (zoom-in
 // spans far more pixels than its width — makes the thin->thick cue hard to read.
 // So the flare scales with zoom: WIDTH_PER_M and the cap apply as-is at
 // WIDTH_REF_ZOOM, then grow by WIDTH_ZOOM_STEP per level above it, clamped so
-// they neither shrink below the reference nor balloon over neighbours far in.
+// they neither shrink below the reference nor balloon over neighbors far in.
 let WIDTH_PER_M = 0.12;   // extra px of flare per meter of altitude, at WIDTH_REF_ZOOM
                           // (~88 m of gain to reach WIDTH_MAX; lowered from 0.15 once the
                           // 3% floor made climbs longer and the old rate capped fast). Tuned
@@ -465,9 +465,9 @@ let CURVY_TURN_PER_M = 0.025; // rad/m (windowed) above which a road is "very cu
 // broken/blobby joins, even for moderately curvy roads like Brevard's
 // Pickleseimer Mill Rd; the base thin->thick altitude cue still shows.
 let CURVY_FLARE_MAX = 1;
-let CURVY_WINDOW_M = 100;    // window the turning density is maximised over
+let CURVY_WINDOW_M = 100;    // window the turning density is maximized over
 
-// Curviness: the highest absolute turning per metre over any window of at least
+// Curviness: the highest absolute turning per meter over any window of at least
 // CURVY_WINDOW_M along the polyline (rad/m). A switchback block scores high even
 // when the rest of the road is straight; jitter and gentle curves stay low.
 function roadCurviness(verts) {
