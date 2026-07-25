@@ -139,8 +139,11 @@ refetch. Geocode lookups are cached in localStorage.
 
 ### Rendering
 
-Leaflet (canvas renderer) on a CARTO basemap draws the roads, colored on a fixed
-3–25 % single-hue gradient so a given color means the same grade in every town.
+[Leaflet](https://leafletjs.com/) — a third-party JavaScript map-rendering
+library, loaded at runtime from a CDN (only its `@types/leaflet` type stubs live
+in `node_modules`) — draws the roads with its canvas renderer over a CARTO
+basemap, colored on a fixed 3–25 % single-hue gradient so a given color means the
+same grade in every town.
 
 - **Localized color.** Coloring is fully segment-level: every ~25 m segment
   wears its own local grade, so paint never claims steepness the ground doesn't
