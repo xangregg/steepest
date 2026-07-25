@@ -793,7 +793,14 @@ export function drawRoads(map, ranked, windowM, mode, rankMode = 'sustained') {
         }
     }
 
-    for (const road of [...ranked].reverse()) {
+    // Draw order = add order on the shared canvas; later roads paint over
+    // earlier ones. Draw the ranked roads (those with a red topExtents extent)
+    // last so they sit on top of the violet "other steep" roads and the incline
+    // virtuals wherever paths cross. A stable sort keeps the prior within-group
+    // ordering intact.
+    const drawOrder = [...ranked].reverse()
+        .sort((a, b) => (a.topExtents?.length ? 1 : 0) - (b.topExtents?.length ? 1 : 0));
+    for (const road of drawOrder) {
         const fg = L.featureGroup();
         const dp = buildDrawPath(road);
         const skeleton = L.polyline(dp.verts.map(v => [v.lat, v.lon]), {
