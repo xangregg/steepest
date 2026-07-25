@@ -55,7 +55,7 @@ async function run(refresh = false) {
     byId('go').disabled = true;
     try {
         const query = byId('place').value.trim();
-        const radiusM = Math.min(15, Math.max(1, +byId('radius').value || 6)) * 1000;
+        const radiusM = Math.min(15, Math.max(1, +byId('radius').value || 5)) * 1000;
 
         status('Locating…');
         const center = parseLatLon(query) ?? await geocode(query, ctl.signal);  // localStorage cached
