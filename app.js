@@ -224,13 +224,13 @@ function render() {
                 r.climbs = hardestClimbs(r.samples, r.elev, 3);
         ranked = ranked.filter(r => r.climbs.length)
             .sort((a, b) => b.climbs[0].score - a.climbs[0].score);
-        // Keep every climb visible across its interior flats: floor its
-        // segments at the climb's average grade for coloring.
+        // Coloring is segment-level; floor each climb's segments at the palest
+        // step so a climb stays one unbroken band across its interior flats.
         for (const r of ranked) {
-            const paint = Float64Array.from(r.segs);
+            const paint = new Float64Array(r.samples.length - 1);
             for (const c of r.climbs)
                 for (let k = c.i; k < c.j; k++)
-                    paint[k] = Math.max(paint[k], c.grade);
+                    paint[k] = GRADE_MIN;
             r.paint = paint;
         }
         // Rows are CLIMBS: all roads' climbs compete in one pool, so a road
@@ -296,9 +296,10 @@ function render() {
                 const [i0, i1] = s.from <= s.to ? [s.from, s.to] : [s.to, s.from];
                 r.listed = true;
                 (r.topExtents ??= []).push([i0, i1]);
-                // Short connector roads have no window segs; paint from zeros
-                // so the floor still gives their slice the palest red.
-                const paint = (r.paint ??= Float64Array.from(r.segs ?? new Float64Array(r.samples.length - 1)));
+                // Coloring is segment-level; floor this incline's slice at the
+                // palest step so its extent reads red continuously (its own
+                // steeper segments still show through above the floor).
+                const paint = (r.paint ??= new Float64Array(r.samples.length - 1));
                 for (let k = i0; k < i1 && k < paint.length; k++)
                     paint[k] = Math.max(paint[k], GRADE_MIN);
             }
@@ -361,6 +362,11 @@ function render() {
             while (b < segs.length && segs[b] >= thresh)
                 b++;
             (e.road.topExtents ??= []).push([a, b]);
+            // Coloring is segment-level; floor the ranked extent at the palest
+            // step so its red band stays continuous across any brief interior dip.
+            const paint = (e.road.paint ??= new Float64Array(e.road.samples.length - 1));
+            for (let k = a; k < b && k < paint.length; k++)
+                paint[k] = Math.max(paint[k], GRADE_MIN);
         }
         // "Other steep" (non-listed) roads have no length threshold: any single
         // ~25 m segment at ≥ 5 % shows in purple, even on a road too short — or

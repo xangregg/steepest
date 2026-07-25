@@ -6,10 +6,10 @@
 // equal color steps (perceptually uniform within each segment). Each ramp runs
 // pale → full-chroma at GRADE_BREAK (12 %) → deep, so a road's steepest pitches
 // stand out from its merely-steep ones. In climb mode, red for the listed
-// top-N roads' climbs and purple for other steep stretches; below 3 % nothing
-// is painted (short crest gaps
-// close at the palest step). Each segment's color is capped at its own local
-// grade so paint never claims steepness the ground doesn't have. Width flares
+// top-N roads' climbs and purple for other steep stretches. Coloring is fully
+// segment-level: each ~25 m segment wears its own local grade, and below 3 % it
+// goes unpainted — except inside a ranked climb/incline/stretch, whose segments
+// are floored to the palest step so the band stays continuous. Width flares
 // with altitude above each run's base (thin -> thick = uphill), and the flare
 // scales up with zoom so it stays legible when zoomed in. Ribbon
 // geometry densifies through the original OSM vertices wherever the road
@@ -20,7 +20,7 @@
 // The exported ramps/constants double as the live-experiment surface (see the
 // window.steepest hook in app.js).
 
-import { haversine, SAMPLE_STEP, GRIND_MIN_GRADE } from './metrics.js';
+import { haversine, GRIND_MIN_GRADE } from './metrics.js';
 
 export const GRADE_MIN = 0.03; // below this a segment gets no highlight at all
 export const GRADE_BREAK = 0.12; // grade where the ramp reaches full-chroma color
@@ -347,65 +347,38 @@ function nearestSegIndex(road, latlng) {
 
 // Merge consecutive segments that land in the same color bin (~1% grade), so
 // a road becomes a handful of constant-color chunks rather than one ribbon
-// per 25 m segment. Segments below GRADE_MIN are skipped entirely — the
-// basemap's own road rendering shows through with no highlight.
-// Color follows road.paint when present (climb mode floors a winning climb's
-// segments at the climb's average grade so its flats stay visible); the
-// chunk's reported value stays the honest local grade.
+// per 25 m segment. Coloring is fully segment-level: each ~25 m segment wears
+// its own local grade, and segments below GRADE_MIN are skipped entirely (the
+// basemap's own road rendering shows through with no highlight). road.paint,
+// when present, marks a ranked extent's segments with a GRADE_MIN floor, so a
+// winning climb/incline/stretch stays one unbroken band across a brief flat;
+// the chunk's reported value is the local segment grade, honest as ever.
 const BINS = Math.round((GRADE_MAX - GRADE_MIN) * 100); // one bin per % of grade
-const GAP_CLOSE_M = 100; // close sub-GRADE_MIN gaps up to this long (crests, breathers)
-const PAINT_LOCAL_CAP = 1.0; // paint never exceeds this × the segment's own local grade
 // splitAt: segment indices where a chunk must break regardless of color bin
 // (climb-interval boundaries, so climb and non-climb hues never share a chunk).
 function colorChunks(road, splitAt) {
     const { samples, segs, elev } = road;
-    // Roads shorter than the sustained window have no segment grades — nothing
-    // to paint unless a mode supplied explicit paint (incline mode floors a
-    // ranked incline's extent even on a short connector road). They still draw
-    // a skeleton/halo; without paint they just contribute no colored ribbon.
-    const base = road.paint ?? segs;
-    if (!base)
+    // Amber-only roads (incline virtuals) carry neither window grades nor a
+    // paint floor — they get no steepness ribbon, just their underlay.
+    if ((!segs && !road.paint) || samples.length < 2)
         return [];
-    // Paint starts from the sustained-window value (plus the climb floor in
-    // climb mode) but is capped relative to the segment's own grade, so color
-    // doesn't bleed past where a hill really ends. An explicit paint floor
-    // (climb/incline extents) keeps at least the palest step across gentle
-    // interior segments — a ranked extent reads continuously, like closed
-    // gaps, even where the road is briefly flat or the incline sits under 3 %.
-    const paint = Float64Array.from(base);
-    for (let k = 0; k < paint.length; k++) {
+    const n = samples.length - 1;
+    // Each segment's paint is its own local grade (below GRADE_MIN it goes
+    // unpainted), lifted to the palest step wherever a ranked extent's floor
+    // (road.paint) covers it so that extent reads continuously.
+    const floor = road.paint; // per-segment GRADE_MIN floor over ranked extents, or null
+    const paint = new Float64Array(n);
+    for (let k = 0; k < n; k++) {
         const local = Math.abs(elev[k + 1] - elev[k]) / (samples[k + 1].d - samples[k].d);
-        const capped = Math.min(paint[k], local * PAINT_LOCAL_CAP);
-        paint[k] = road.paint && paint[k] >= GRADE_MIN ? Math.max(capped, GRADE_MIN) : capped;
-    }
-    // Close short low-grade runs flanked by painted segments on both sides: a
-    // 50 m crest flat shouldn't visually sever one continuous hill. Closed
-    // gaps get exactly GRADE_MIN — the ramp's palest step. Skipped for roads
-    // evaluated per-segment (window of one ~25 m segment): each segment stands
-    // alone there, so there's no window-length hill to keep continuous, and
-    // closing would paint genuinely gentle road between isolated steep flecks.
-    if ((road.window ?? Infinity) > SAMPLE_STEP) {
-        let gapStart = -1;
-        for (let k = 0; k <= paint.length; k++) {
-            const low = k < paint.length && paint[k] < GRADE_MIN;
-            if (low && gapStart < 0) {
-                gapStart = k;
-            }
-            else if (!low && gapStart >= 0) {
-                // Snap to the nearest whole segment: a 4-segment flat at 25.03 m
-                // spacing (100.1 m) should close like the 100 m it nominally is.
-                if (gapStart > 0 && k < paint.length && samples[k].d - samples[gapStart].d <= GAP_CLOSE_M + SAMPLE_STEP / 2) {
-                    for (let m = gapStart; m < k; m++)
-                        paint[m] = GRADE_MIN;
-                }
-                gapStart = -1;
-            }
-        }
+        let g = local >= GRADE_MIN ? local : 0;
+        if (floor && floor[k] > g)
+            g = floor[k];
+        paint[k] = g;
     }
     const bin = v => Math.min(BINS, Math.round(((v - GRADE_MIN) / (GRADE_MAX - GRADE_MIN)) * BINS));
     const chunks = [];
     let cur = null;
-    for (let k = 0; k < paint.length; k++) {
+    for (let k = 0; k < n; k++) {
         if (paint[k] < GRADE_MIN) {
             cur = null;
             continue;

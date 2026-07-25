@@ -142,14 +142,13 @@ refetch. Geocode lookups are cached in localStorage.
 Leaflet (canvas renderer) on a CARTO basemap draws the roads, colored on a fixed
 3–25 % single-hue gradient so a given color means the same grade in every town.
 
-- **Localized color.** Coloring is per-segment: every ~25 m segment gets its own
-  grade — the steepest sustained-length window that covers it — capped at the
-  segment's own local grade so paint never claims steepness the ground doesn't
-  have. (Segments across a steep run land on similar values, so the ribbon reads
-  smooth without being painted one flat color.) Stretches under 3 % get no
-  highlight at all, so the map shows where the hills are and a long road fades in
-  and out with its actual climbs instead of wearing its single best grade
-  everywhere.
+- **Localized color.** Coloring is fully segment-level: every ~25 m segment
+  wears its own local grade, so paint never claims steepness the ground doesn't
+  have, and below 3 % it goes unpainted. Inside a ranked climb, incline, or
+  stretch, any sub-3 % spot is lifted to the palest step so the band stays
+  continuous — its steeper segments still show through. The map shows where the
+  hills are, and a long road fades in and out with its actual climbs instead of
+  wearing its single best grade everywhere.
 - **Long-incline underlay.** Mostly-monotonic stretches at least the "long
   incline" length (default 800 m) and averaging ≥ 3 % get a continuous
   translucent amber underlay beneath the ribbons, so a mile-long 3 % incline is
@@ -160,10 +159,9 @@ Leaflet (canvas renderer) on a CARTO basemap draws the roads, colored on a fixed
 - **Red marks the ranking, purple marks the rest.** In every mode the ranked
   (top-N) extents wear the red gradient and all other steep road wears a
   contrasting purple one (same 3–25 % scale), so map color mirrors the ranking.
-  - *Hardest climb.* The listed climbs are red, and a winning climb is kept
-    visually continuous, so any flat or gentle stretch inside it is colored as if
-    it had the climb's average grade (the popup still reports the true local
-    grade).
+  - *Hardest climb.* The listed climbs are red; each stays one unbroken band,
+    its segments showing their own grades with any sub-3 % spot inside lifted to
+    the palest step so the band never breaks.
   - *Steepest.* Red marks each ranked stretch, extended along its shoulders
     (connected segments whose sustained grade stays within ~80 % of the
     stretch's own, and above 3 %), so nearly-as-steep road on either side reads
