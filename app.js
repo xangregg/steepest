@@ -273,8 +273,9 @@ function render() {
         // incline's exact extent — per constituent road, from the incline's
         // provenance slices — and every other steep road goes violet. The
         // extent's paint is floored at the palest step so the whole incline
-        // reads red even where its grade sits below the 5 % color floor
-        // (inclines only need 2.5 %); popups still report the true grades.
+        // reads red even where its grade sits below the 3 % color floor (an
+        // incline averages ≥ 3 %, but its gentler segments can dip under);
+        // popups still report the true grades.
         // Rank every incline (not just the listed top-N), carrying the whole
         // incline's stats onto each constituent road's slice, so a click on a
         // lower-ranked incline still shows its rank and its full run.
@@ -381,7 +382,7 @@ function render() {
 
     drawn ??= ranked; // climb/incline modes draw the ranked set as-is
 
-    // Long-incline acknowledgment: mostly monotonic, >= 2% stretches at least
+    // Long-incline acknowledgment: mostly monotonic, >= 3% stretches at least
     // longLen long get the amber underlay where the steepness colors are silent.
     for (const r of drawn) {
         if (r.grindSpan !== longLen) {
