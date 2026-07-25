@@ -1,10 +1,9 @@
 # Steepest Road in Town
 
 A static web app that answers the question: **what's the steepest road in town?**
-Type a town name (or `lat, lon`), pick a search radius, a sustained-stretch
-length, and a long-incline length (and how many connected roads an incline may
-span) — get a map of roads colored by steepness plus a ranked bar list of the
-steepest ones.
+Enter a place and get a map of roads colored by steepness plus a ranked bar list
+of the steepest ones. A handful of inputs (below) tune the search area and how
+roads are ranked.
 
 Everything runs in the browser against free public APIs; there is no backend and
 no database, so it hosts happily on GitHub Pages —
@@ -12,122 +11,176 @@ no database, so it hosts happily on GitHub Pages —
 
 Code and docs were largely written using Claude Code (Fable 5 and Opus 4.8).
 
-## How it works
+## Inputs
 
-1. **Geocoding** — [Nominatim](https://nominatim.org/release-docs/latest/api/Search/)
-   turns the place name into coordinates (a `lat, lon` input skips this).
-2. **Roads** — the [Overpass API](https://overpass-api.de/) returns all drivable
-   OpenStreetMap (OSM) ways (`residential` … `trunk`) within the radius. Ways
-   sharing a name and an endpoint are stitched into continuous roads — but
-   only when travel continues roughly straight through the join (≤ 70° turn)
-   and any TIGER `name_base`/`name_type` tags agree (TIGER is the US Census
-   Bureau's road data, bulk-imported into OSM in 2007 with often-mangled
-   names), so distinct streets that share such a name don't chain into one
-   fictional road. Bridge and tunnel spans are
-   kept for continuity, but their elevations are replaced by a straight-line
-   deck between the solid ground at each end — the elevation model reports the
-   gorge under a bridge, not the roadway.
-3. **Elevation** — each road is resampled every ~25 m, and elevations come from
-   [AWS Terrain Tiles](https://registry.opendata.aws/terrain-tiles/)
-   (Mapzen terrarium PNGs, decoded pixel-by-pixel in a canvas — free, global,
-   no API key), sampled bilinearly. Impossible grade jumps — steeper than any
-   real road, from a DEM dataset seam a road weaves across — are detected and
-   interpolated across (like a bridge deck). A 3-point moving average to further
-   tame digital-elevation-model (DEM) noise is available but currently off, to
-   keep short, steep pitches at their full grade.
-4. **Metrics** — three ranking modes:
-   - **Steepest** (default): the best average grade a road holds over any
-     stretch of the chosen length (default 250 m). The length is a numeric
-     input: 25 m degenerates to "steepest single segment" (noisy — treat with
-     skepticism), longer windows reward genuinely long climbs. Roads shorter
-     than the window are excluded, since the metric is undefined for them.
-     Rows are *stretches*, not whole roads: a road with several steep sections
-     can take several list spots — each section's best window competes on its
-     own, up to three per road. Sections split where the metric drops below
-     the 3 % display floor, or at a marked dip within a steep run (the window
-     grade falling below ~80 % of the weaker section — a prominence test, so a
-     uniformly steep hill or a mere shoulder still yields one row). Same-name
-     entries from parallel chains are deduped geographically.
-   - **Hardest climb**: effort rather than grade — each road's best
-     continuous climb (in either travel direction), scored by the **effort
-     integral** Σ segment length × grade², which equals gain × average grade
-     on a steady climb (the FIETS index from the Dutch cycling magazine
-     *Fiets* uses the same core formula): same gain over half the distance scores
-     double, and every stretch of real climbing adds. A climb tolerates only
-     small counter-slope (≤ max(2 m, 10 % of ascent)), so a genuine dip ends
-     one climb and starts another; near-flat tails (< 5 %) aren't part of the
-     climb, while adjacent ≥ 5 % climbing is included even when it's gentler
-     than the core. Up to three non-overlapping climbs are extracted per road
-     and all compete individually in the ranking, so a road with two distinct
-     hills can take two list spots (same-name entries are deduped
-     geographically, so parallel carriageways still yield one row per
-     physical climb).
-   - **Longest incline**: the length of the longest long-incline run — the same
-     mostly-monotonic, ≥ 3 % stretches (of at least the "long incline" length)
-     that get the amber underlay described below. Ranks by how far the hill goes
-     rather than how steep it gets. An incline may span several **connected
-     roads** (the "over N roads" knob): a climb that continues across a junction
-     onto a differently-named road is followed through a junction graph (built
-     from coincident sample points, so it handles a road ending mid-way along the
-     next) and reported as one incline, e.g. "Burrell Mountain Rd + Whitmire St".
-     A bounded search over chained road slices runs the same grind rule on each
-     chain's combined elevation profile; results are de-duplicated by physical
-     extent — no stretch of pavement appears in two inclines, and a multi-road
-     incline supersedes its single-road pieces — but a road with several
-     distinct inclines ranks each one, so two inclines climbing away from a
-     valley floor (or meeting at a summit) both appear.
+- **Place** — a town or city name (e.g. `Pittsburgh, PA`) or coordinates like
+  `40.44, -79.99`.
+- **Radius** — how far out from that center to search, in km (default 5). Larger areas have longer fetch times.
+- **Rank by** — which metric orders the list: **Steepest**, **Hardest climb**,
+  or **Longest incline** (described below).
+- **Top** — how many roads appear in the ranked list (default 15); in
+  Hardest-climb mode, also how many climbs are shaded red on the map.
+- **Sustained length** — the stretch length steepness is measured over
+  (default 250 m). Sampling is at 25 m resolution. Larger values reward long
+  climbs.
+- **Long incline** — the minimum length for a run to count as a "long incline"
+  and get the amber underlay (default 800 m); also the length ranked in
+  Longest-incline mode.
+- **Over _N_ roads** — Longest-incline mode only: how many connected roads one
+  incline may span (default 1); higher lets an incline continue across junctions
+  onto adjoining roads.
 
-   Changing mode or window re-ranks instantly from cached elevation profiles.
-5. **Caching** — processed results (roads with elevation profiles) are cached
-   in IndexedDB per center+radius for two weeks, so repeat searches skip
-   Overpass and tile sampling entirely; a "refresh from OSM" link in the status
-   line forces a refetch. Geocode lookups are cached in localStorage.
-6. **Rendering** — Leaflet (canvas renderer) with a CARTO basemap; roads are
-   colored on a fixed 3–25 % single-hue color gradient so colors mean the same
-   thing in every town. Coloring is localized: each ~25 m segment is colored by
-   the steepest window-length stretch it belongs to, and stretches under 3 %
-   get no highlight at all — so the map shows where the hills are, and a long
-   road fades in and out with its actual climbs instead of wearing its single
-   best grade everywhere. Long inclines — mostly monotonic stretches at least
-   the "long incline" length (default 800 m), averaging ≥ 3 % — are drawn as a
-   continuous
-   translucent amber underlay beneath the steepness ribbons, so a mile-long
-   3 % incline is acknowledged instead of invisible; its width flare
-   accumulates over the whole incline, unbroken by whatever steep colors sit
-   on top. An incline that runs across junctions onto connected roads (up to the
-   "over N roads" count) is drawn as one unbroken amber ribbon — via a synthetic
-   "virtual road" spanning its exact extent — in every ranking mode, so the amber
-   reflects the same multi-road inclines the incline ranking finds. In
-   hardest-climb mode, the listed (top-N) roads' climbs wear the
-   red gradient while all other steep stretches use a contrasting violet
-   gradient (same 3–25 % scale), so map color mirrors the ranking. A winning
-   climb is also kept visually continuous: any flat or gentle stretch inside
-   it is colored as if it had the climb's average grade, so a breather
-   mid-climb doesn't punch a hole in the highlight (the popup still reports
-   the true local grade). Steepest mode uses the same red/violet split, with
-   red marking each **ranked stretch**, extended along its shoulders —
-   connected segments whose sustained grade stays within the same ~80 %
-   prominence fraction of the stretch's own (and above 3 %) — so
-   nearly-as-steep road on either side reads as part of the red section
-   rather than a violet fringe, while the genuinely lesser rest of the road
-   goes violet like any other steep road (the width flare still runs
-   continuously across the color change). The violet "other steep" roads have **no length
-   threshold** — any single ~25 m segment at ≥ 3 % shows — so a short steep
-   pitch (too short to rank, or that the full window averages away) still
-   appears, without changing which roads make the list (a clicked segment's
-   popup reports both its own grade and the sustained grade at the chosen
-   length, showing how far it falls short of ranking). Longest-incline mode
-   follows the same pattern: each ranked incline's exact extent — across every
-   road it spans, including short connectors — wears the red gradient, floored
-   at the palest red where the incline's grade sits below the 3 % color scale
-   (an incline averages ≥ 3 %, but its gentler segments can dip under), largely
-   covering its amber underlay; every
-   other steep road stays violet, and popups keep reporting true grades. The sidebar bar chart shares the color gradient and
-   doubles as the ranked list; hover to highlight on the map, click to zoom.
-   A "Download CSV" button exports the current ranking — including begin/end
-   lat/lon/elevation for each ranked stretch, with columns tailored to the
-   ranking mode. Searches are encoded in the URL hash, so results are
-   shareable. Light and dark themes follow the OS.
+## How it works (short version)
+
+1. **Geocode** the place name to coordinates (a `lat, lon` input skips this).
+2. **Fetch** all drivable OpenStreetMap _ways_ within the radius and stitch them
+   into continuous named roads.
+3. **Sample** each road's elevation every ~25 m from public terrain tiles,
+   correcting bridges, tunnels, and dataset seams.
+4. **Rank** three ways:
+   - **Steepest** — best average grade over a stretch of the chosen length.
+   - **Hardest climb** — an effort score, roughly gain × average grade.
+   - **Longest incline** — the longest sustained rise, which may span several
+     connected roads.
+
+   A bar chart shows the top-ranked roads; hover to highlight, click to zoom.
+5. **Draw** the roads colored by steepness and flared by relative altitude: red
+   for the ranked stretches, purple for others, with an amber underlay for long
+   inclines. Click a segment for exact grades.
+6. **Cache** the processed results so re-ranking is instant, encode the search in
+   the URL for sharing, and export the ranking to CSV.
+
+## How it works (long version)
+
+### Geocoding
+
+[Nominatim](https://nominatim.org/release-docs/latest/api/Search/) turns the
+place name into coordinates (a `lat, lon` input skips this).
+
+### Roads
+
+The [Overpass API](https://overpass-api.de/) returns all drivable OpenStreetMap
+(OSM) ways within the radius: `residential`, `unclassified`, `living_street`,
+`tertiary`, `secondary`, `primary`, and `trunk` (excluding service roads,
+tracks, and paths).
+
+- **Stitching.** Ways sharing a name and an endpoint are merged into continuous
+  roads, but only when travel continues roughly straight through the join
+  (≤ 70° turn) and any TIGER `name_base`/`name_type` tags agree, so distinct
+  streets that share such a name don't chain into one fictional road. (TIGER is
+  the US Census Bureau's road data, bulk-imported into OSM in 2007 with
+  often-mangled names.)
+- **Bridges & tunnels.** Their spans are kept for continuity, but their
+  elevations are replaced by a straight-line deck between the solid ground at
+  each end, so the elevation model reports the gorge under a bridge, not the
+  roadway.
+
+### Elevation
+
+Each road is resampled every ~25 m, and elevations come from
+[AWS Terrain Tiles](https://registry.opendata.aws/terrain-tiles/) (Mapzen
+terrarium PNGs, decoded pixel-by-pixel in a canvas — free, global, no API key),
+sampled bilinearly. Roads that cut into terrain are especially susceptible to
+errors in local grade calculations. Impossible grade jumps steeper than any real
+road are detected and interpolated across; they tend to appear where a road
+crosses a seam between the source elevation datasets.
+
+### Metrics
+
+Ranks are based on all the downloaded map data, not just the part in view.
+
+- **Steepest** is the default. It ranks a road by the best average grade it
+  holds over any stretch of the chosen length (250 m by default).
+  - The length is a knob: 25 m degenerates to "steepest single segment" (noisy;
+    treat with skepticism), while longer windows reward genuinely long climbs.
+    Roads shorter than the window are excluded, since the metric is undefined for
+    them.
+  - Rankings are of *stretches*, not whole roads: a road with several steep
+    sections can take several list spots, each section's best window competing on
+    its own, up to three per road. Sections split where the metric drops below
+    the 3 % display floor, or at a marked dip within a steep run.
+- **Hardest climb** ranks by effort rather than grade. Each continuous climb on
+  a road (in either travel direction) is scored by the **effort integral**
+  Σ segment length × grade², which equals gain × average grade on a steady climb
+  (the FIETS index from the Dutch cycling magazine *Fiets* uses the same core
+  formula), so the same gain over half the distance scores double.
+  - A climb tolerates only small counter-slope (≤ max(2 m, 10 % of ascent)), so
+    a genuine dip ends one climb and starts another; near-flat tails aren't part
+    of the climb, while adjacent climbing that's still real is included even when
+    it's gentler than the core.
+  - Up to three non-overlapping climbs are extracted per road and all compete
+    individually, so a road with two distinct hills can take two list spots
+    (same-name entries are deduped geographically, so the two sides of a divided
+    road still yield one row per physical climb).
+- **Longest incline** ranks by the length of the longest long-incline run: the
+  same mostly-monotonic, ≥ 3 % stretches (of at least the "long incline" length)
+  that get the amber underlay, measuring how far the hill goes rather than how
+  steep it gets.
+  - An incline may span several connected roads (the "over N roads" knob): a
+    climb that continues across a junction onto a differently-named road is
+    followed through a junction graph (built from coincident sample points, so it
+    handles a road ending mid-way along the next) and reported as one incline,
+    e.g. "Burrell Mountain Rd + Whitmire St".
+  - A bounded search over chained road slices runs the same grind rule on each
+    chain's combined elevation profile; results are de-duplicated by physical
+    extent (no stretch of pavement appears in two inclines, and a multi-road
+    incline supersedes its single-road pieces), but a road with several distinct
+    inclines ranks each one, so two inclines climbing away from a valley floor
+    (or meeting at a summit) both appear.
+
+Changing mode or window re-ranks instantly from cached elevation profiles.
+
+### Caching
+
+Processed results (roads with elevation profiles) are cached in IndexedDB per
+location+radius for two weeks, so repeat searches skip Overpass and tile
+sampling entirely; a "refresh from OSM" link in the status line forces a
+refetch. Geocode lookups are cached in localStorage.
+
+### Rendering
+
+Leaflet (canvas renderer) on a CARTO basemap draws the roads, colored on a fixed
+3–25 % single-hue gradient so a given color means the same grade in every town.
+
+- **Localized color.** Coloring is per-segment: every ~25 m segment gets its own
+  grade — the steepest sustained-length window that covers it — capped at the
+  segment's own local grade so paint never claims steepness the ground doesn't
+  have. (Segments across a steep run land on similar values, so the ribbon reads
+  smooth without being painted one flat color.) Stretches under 3 % get no
+  highlight at all, so the map shows where the hills are and a long road fades in
+  and out with its actual climbs instead of wearing its single best grade
+  everywhere.
+- **Long-incline underlay.** Mostly-monotonic stretches at least the "long
+  incline" length (default 800 m) and averaging ≥ 3 % get a continuous
+  translucent amber underlay beneath the ribbons, so a mile-long 3 % incline is
+  acknowledged instead of invisible; its width flare accumulates over the whole
+  incline. An incline crossing junctions onto connected roads is drawn as a
+  single unbroken amber ribbon (a synthetic "virtual road" spanning its exact
+  extent) in every mode, so the amber matches the inclines the ranking finds.
+- **Red marks the ranking, purple marks the rest.** In every mode the ranked
+  (top-N) extents wear the red gradient and all other steep road wears a
+  contrasting purple one (same 3–25 % scale), so map color mirrors the ranking.
+  - *Hardest climb.* The listed climbs are red, and a winning climb is kept
+    visually continuous, so any flat or gentle stretch inside it is colored as if
+    it had the climb's average grade (the popup still reports the true local
+    grade).
+  - *Steepest.* Red marks each ranked stretch, extended along its shoulders
+    (connected segments whose sustained grade stays within ~80 % of the
+    stretch's own, and above 3 %), so nearly-as-steep road on either side reads
+    as part of the red section rather than a purple fringe.
+  - *Longest incline.* Each ranked incline's exact extent, across every road it
+    spans, wears red (floored at the palest red where the incline's grade dips
+    below the 3 % color scale), largely covering its amber underlay.
+- **Other steep roads have no length threshold.** Any single ~25 m segment at
+  ≥ 3 % shows in purple, so a short steep pitch too brief to rank still appears,
+  without changing which roads make the list. Clicking a segment reports its own
+  grade and the sustained grade at the chosen length, showing how far it falls
+  short of ranking.
+- **Sidebar & sharing.** The bar chart shares the color gradient and doubles as
+  the ranked list; hover to highlight on the map, click to zoom. A "Download CSV"
+  button exports the current ranking (begin/end lat/lon/elevation per stretch,
+  columns tailored to the mode). Searches are encoded in the URL hash so results
+  are shareable, and light/dark themes follow the OS.
 
 ## Code tour
 
@@ -202,7 +255,7 @@ No build step. This repo is live at <https://xangregg.github.io/steepest/>.
 
 ## Known limitations
 
-- The DEM is ~10–30 m resolution: on switchbacks or roads cut into steep
+- The digital-elevation-model (DEM) is ~10–30 m resolution: on switchbacks or roads cut into steep
   hillsides, samples can catch the hillside instead of the roadbed and overstate
   grades (longer sustained windows resist this; short ones don't).
 - Public Overpass servers rate-limit; big-city searches at large radii can be
