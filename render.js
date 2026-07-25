@@ -34,17 +34,19 @@ export const GRADE_MAX = 0.25; // ramp bottoms out (deepest color) at a 25% grad
 // basemap. The dark-mode lo isn't as dark as the light-mode hi, so the gentlest
 // painted grade still separates from the near-black basemap.
 export const RAMPS = {
-    light: { lo: '#fbd3d0', mid: '#dd2c22', hi: '#160302' },
+    light: { lo: '#fbd3d0', mid: '#dd2c22', hi: '#400503' },
     dark: { lo: '#5a1512', mid: '#e5352a', hi: '#fbd3d0' },
 };
 
 // Second sequential context (climb mode's "steep but not the hardest climb"):
-// its own single-hue ramp over the same domain. Purple reads clearly against
-// the gray basemap (cyan sank into it), stays well away from the climb reds,
-// and the hue pair survives red-green color-vision deficiency.
+// its own single-hue ramp over the same domain. Indigo reads clearly against
+// the gray basemap (cyan sank into it), stays well away from the climb reds, and
+// the red/indigo hue pair survives red-green color-vision deficiency. Each anchor
+// is the matching RAMPS red anchor's Oklab lightness and chroma rotated to the
+// indigo hue, so the two ramps track each other step for step.
 export const RAMPS_ALT = {
-    light: { lo: '#e6dcf8', mid: '#7c46dd', hi: '#0d0716' },
-    dark: { lo: '#2e1a52', mid: '#8a55e8', hi: '#e6dcf8' },
+    light: { lo: '#d7dcfc', mid: '#6761f4', hi: '#191648' },
+    dark: { lo: '#292863', mid: '#6d68fc', hi: '#d7dcfc' },
 };
 
 // Categorical (non-gradient) color for long-incline stretches — mostly
