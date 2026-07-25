@@ -401,6 +401,8 @@ function colorChunks(road, splitAt) {
 const LINE_WEIGHT = 3.5;  // highlight outline weight in px
 const HALO_MARGIN = 9;    // px the hover halo glows beyond each ribbon edge
 const HALO_CAP = 6;       // px the hover halo extends past each road end
+const HALO_EXTENT_PAD = 2; // samples of halo lead-in/out past each ranked extent (~2×25 m),
+                           // so the glow spills a little beyond the qualifying region
 const HALO_OPACITY = 0.35; // translucency of the hover glow over the basemap
 const HALO_MITER_MAX = 1;   // cap on the halo's miter widening so hairpins can't spike
 const RIBBON_MITER_MAX = 2; // same cap for the ribbon/underlay, looser so gentle
@@ -754,7 +756,13 @@ export function drawRoads(map, ranked, windowM, mode, rankMode = 'sustained') {
             }
         }
         if (manageArrow) {
-            arrowLatLngs = on ? road.samples.map(s => [s.lat, s.lon]) : null;
+            // Aim the off-screen arrow at the same region the halo hugs: the
+            // ranked extent(s) if any, else the whole road (non-listed roads,
+            // and incline mode, whose virtual road is already its exact extent).
+            arrowLatLngs = on
+                ? (e.haloSampleRanges ?? [[0, road.samples.length - 1]])
+                    .flatMap(([i, j]) => road.samples.slice(i, j + 1).map(s => [s.lat, s.lon]))
+                : null;
             updateArrow();
         }
     }
@@ -789,13 +797,20 @@ export function drawRoads(map, ranked, windowM, mode, rankMode = 'sustained') {
                 return halfAt(v.k, f) * (1 - v.f) + halfAt(Math.min(v.k + 1, lastK), f) * v.f;
             };
         };
-        // Hover halo: a thick gray glow tracing the WHOLE road — flats included,
-        // so the full extent lights up, not just the painted steep chunks. Two
+        // Hover halo: a thick gray glow tracing the road — flats included, so
+        // whatever it covers lights up, not just the painted steep chunks. Two
         // opaque passes on the faded halo pane: a miter offset ring (pass 1)
         // covers the outer corners, per-segment trapezoids (pass 2) fill the
         // inner corners, so a curvy road can't leave winding-rule holes. Width
         // follows the road's altitude flare from its global-min base, plus
         // HALO_MARGIN; both passes toggle on hover.
+        //
+        // The glow hugs the ranked region rather than the whole road: in climb
+        // and sustained modes it spans just the road's topExtents (its listed
+        // climbs / best windows), padded a little, so hovering a row lights up
+        // the qualifying stretch — matching incline mode, whose virtual road is
+        // already trimmed to the incline. Roads with no extents (incline virtual
+        // roads, or non-listed roads hovered on the map) keep the whole-road glow.
         const fullWidthAt = runWidthAt(0, lastK);
         const haloWidthAt = (v, zoom) => fullWidthAt(v, zoom) + HALO_MARGIN;
         const haloOpts = {
@@ -803,10 +818,35 @@ export function drawRoads(map, ranked, windowM, mode, rankMode = 'sustained') {
             stroke: false, fillColor: haloColor, fillOpacity: 0, fillRule: 'nonzero',
         };
         const lastV = dp.verts.length - 1;
-        const haloPolys = [
-            { seg: false, poly: L.polygon(ribbonRing(geom, dp.verts, 0, lastV, haloWidthAt, HALO_MITER_MAX), haloOpts).addTo(fg) },
-            { seg: true, poly: L.polygon(segmentQuads(geom, dp.verts, 0, lastV, haloWidthAt, HALO_CAP), haloOpts).addTo(fg) },
-        ].map(h => ({ ...h, iStart: 0, iEnd: lastV, widthAt: haloWidthAt }));
+        // Ranked-extent sample ranges (padded + merged), or null for a whole-road
+        // halo. Extents are sample indices; pad in sample space, then merge
+        // overlaps so abutting extents don't seam. Kept in sample space so the
+        // off-screen arrow can aim at the same extent (setHighlight); the halo
+        // geometry below maps them to draw-path vertices.
+        const haloSampleRanges = (() => {
+            const ext = road.topExtents;
+            if (!ext?.length)
+                return null;
+            const padded = ext
+                .map(([i, j]) => [Math.max(0, i - HALO_EXTENT_PAD), Math.min(lastK, j + HALO_EXTENT_PAD)])
+                .sort((a, b) => a[0] - b[0]);
+            const merged = [];
+            for (const [i, j] of padded) {
+                const last = merged[merged.length - 1];
+                if (last && i <= last[1])
+                    last[1] = Math.max(last[1], j);
+                else
+                    merged.push([i, j]);
+            }
+            return merged;
+        })();
+        const haloRanges = haloSampleRanges
+            ? haloSampleRanges.map(([i, j]) => [dp.sampleIdx[i], dp.sampleIdx[j]])
+            : [[0, lastV]];
+        const haloPolys = haloRanges.flatMap(([iStart, iEnd]) => [
+            { seg: false, poly: L.polygon(ribbonRing(geom, dp.verts, iStart, iEnd, haloWidthAt, HALO_MITER_MAX), haloOpts).addTo(fg), iStart, iEnd, widthAt: haloWidthAt },
+            { seg: true, poly: L.polygon(segmentQuads(geom, dp.verts, iStart, iEnd, haloWidthAt, HALO_CAP), haloOpts).addTo(fg), iStart, iEnd, widthAt: haloWidthAt },
+        ]);
         const wirePopup = (poly, stretchValue) => {
             // Click handler registered before bindPopup so it runs first and
             // the popup content can use the clicked segment.
@@ -926,7 +966,7 @@ export function drawRoads(map, ranked, windowM, mode, rankMode = 'sustained') {
         fg.on('mouseover', () => setHighlight(road, true));
         fg.on('mouseout', () => setHighlight(road, false));
         fg.addTo(group);
-        lines.set(road, { skeleton, haloPolys, chunks, steepest, dp });
+        lines.set(road, { skeleton, haloPolys, chunks, steepest, dp, haloSampleRanges });
     }
 
     // Pixel-based widths mean the ribbon geometry is zoom-dependent.
