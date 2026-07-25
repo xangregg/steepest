@@ -40,7 +40,7 @@
         road.climbs = hardestClimbs(samples, road.elev, 3);
         road.grind = grindMask(samples, road.elev, 1000);
         // All fixture climbs count as top-listed except the Crosser's, which
-        // simulates a road outside the top-N: its climb must render violet.
+        // simulates a road outside the top-N: its climb must render purple.
         road.topExtents = name === 'Crosser 6%'
             ? null
             : road.climbs.map(c => [c.i, c.j]);
@@ -92,8 +92,8 @@
             return { lat: 35.2315 + t * 0.0025 + jit(1), lon: -82.7105 + 0.0006 * Math.sin(t * Math.PI * 12) + jit(4) };
         }), d => d * 0.05),
     ].sort((a, b) => b.value - a.value);
-    // Climb mode by default; #mode=sustained exercises the sustained red/violet
-    // split (the top-N roads red, every other steep road violet).
+    // Climb mode by default; #mode=sustained exercises the sustained red/purple
+    // split (the top-N roads red, every other steep road purple).
     const p = new URLSearchParams(location.hash.slice(1));
     const rankMode = p.get('mode') === 'sustained' ? 'sustained' : 'climb';
     for (const r of roads) {

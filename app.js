@@ -16,7 +16,7 @@
 //   paint     color values; climb mode floors climb extents for continuity
 //   topExtents  [i, j] extents that made the ranked list (climb mode: this
 //               road's listed climbs; sustained mode: the listed road's best
-//               window) — those wear red on the map, the rest violet
+//               window) — those wear red on the map, the rest purple
 
 import { parseLatLon, geocode, fetchRoads, prepareRoads } from './roads.js';
 import { elevatePoints } from './elevation.js';
@@ -195,7 +195,7 @@ function render() {
         r.paint = null;
         r.topExtents = null;
         r.rankedSpans = null; // [{i, j, rank, ...}] city-wide rank of each ranked container, for the popup
-        r.listed = false; // set on listed roads (they wear red on the map vs violet)
+        r.listed = false; // set on listed roads (they wear red on the map vs purple)
         return r;
     });
     let ranked = withFields.filter(r => r.value != null); // shorter-than-window roads have no value
@@ -262,7 +262,7 @@ function render() {
             fullRanked.push(e);
         }
         entries = fullRanked.slice(0, listMax);
-        // Listed climbs wear red on the map; everything else steep is violet,
+        // Listed climbs wear red on the map; everything else steep is purple,
         // so map color mirrors city-wide rank.
         for (const e of entries)
             (e.road.topExtents ??= []).push([e.climb.i, e.climb.j]);
@@ -271,7 +271,7 @@ function render() {
         // Rank by longest qualifying long incline (same rule and knob as the
         // amber underlay). Like the other modes, red marks each ranked
         // incline's exact extent — per constituent road, from the incline's
-        // provenance slices — and every other steep road goes violet. The
+        // provenance slices — and every other steep road goes purple. The
         // extent's paint is floored at the palest step so the whole incline
         // reads red even where its grade sits below the 3 % color floor (an
         // incline averages ≥ 3 %, but its gentler segments can dip under);
@@ -351,8 +351,8 @@ function render() {
             // STRETCH_COL_FRAC of the stretch's own (and above GRADE_MIN) —
             // the same fraction that decides when a neighboring peak ranks
             // separately, so steepness not distinct enough for its own row
-            // reads as part of this red section instead of a violet wing.
-            // The rest of the road goes violet like any unlisted road.
+            // reads as part of this red section instead of a purple wing.
+            // The rest of the road goes purple like any unlisted road.
             const segs = e.road.segs;
             const thresh = Math.max(GRADE_MIN, STRETCH_COL_FRAC * e.stretch.grade);
             let a = e.stretch.i, b = e.stretch.j;
@@ -363,7 +363,7 @@ function render() {
             (e.road.topExtents ??= []).push([a, b]);
         }
         // "Other steep" (non-listed) roads have no length threshold: any single
-        // ~25 m segment at ≥ 5 % shows in violet, even on a road too short — or
+        // ~25 m segment at ≥ 5 % shows in purple, even on a road too short — or
         // not steep enough over the full window — to make the list. Re-evaluate
         // them at per-segment grades (both coloring and inclusion). The full-
         // window segs move to fullSegs so the popup can still report the
@@ -534,7 +534,7 @@ darkQuery.addEventListener('change', () => {
 //   steepest.grind({ light: '#8a93a5', opacity: 0.4 })
 //   steepest.grind({ dark: '#5f6a78' })
 //   steepest.ramp({ light: { mid: '#ff0000', hi: '#330000' } })
-//   steepest.ramp({ hue: 'violet', dark: { mid: '#9a6cff' } })
+//   steepest.ramp({ hue: 'purple', dark: { mid: '#9a6cff' } })
 //   steepest.width({ refZoom: 14, zoomStep: 1.3, factorMin: 0.25, factorMax: 8, curvyMax: 1, curvyTurn: 0.025 })
 //   steepest.curviness()  // table of roads by curviness + which are "curvy"
 //   steepest.map           // the Leaflet map (e.g. steepest.map.setView(...))

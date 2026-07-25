@@ -243,7 +243,7 @@ export function bestSustainedWindow(samples, elev, windowM) {
 // uniformly steep hill (no dip) stays ONE stretch, a hill-dip-hill run splits.
 // Exported because the map uses the same fraction to extend a ranked
 // stretch's red into its shoulders (see app.js): what isn't distinct enough
-// to rank separately shouldn't read as a separate (violet) section either.
+// to rank separately shouldn't read as a separate (purple) section either.
 export const STRETCH_COL_FRAC = 0.8;
 
 // A road's distinct ranked stretches. The road splits at "cold" segments
