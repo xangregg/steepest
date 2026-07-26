@@ -33,6 +33,10 @@ Code and docs were largely written using Claude Code (Fable 5 and Opus 4.8).
 - **Over _N_ roads** — Longest-incline mode only: how many connected roads one
   incline may span (default 1); higher lets an incline continue across junctions
   onto adjoining roads.
+- **Color** — the map color scheme (default **Dual**): _Dual_ paints the ranked
+  top-N extents red and every other steep segment indigo; _Single_ uses one red
+  scale for all steep road, ranked or not (and shifts the long-incline underlay
+  to a yellower gold so it stays legible against the red).
 
 ## How it works (short version)
 
@@ -163,9 +167,14 @@ same grade in every town.
   incline. An incline crossing junctions onto connected roads is drawn as a
   single unbroken amber ribbon (a synthetic "virtual road" spanning its exact
   extent) in every mode, so the amber matches the inclines the ranking finds.
-- **Red marks the ranking, indigo marks the rest.** In every mode the ranked
-  (top-N) extents wear the red gradient and all other steep road wears a
-  contrasting indigo one (same 3–25 % scale), so map color mirrors the ranking.
+- **Red marks the ranking, indigo marks the rest.** In the default **Dual**
+  color scheme, in every mode the ranked (top-N) extents wear the red gradient
+  and all other steep road wears a contrasting indigo one (same 3–25 % scale),
+  so map color mirrors the ranking. The **Single** scheme drops the indigo and
+  paints every steep segment on the one red scale — the ranking still governs
+  the list and which extents highlight, it just isn't hued — for a plainer "where
+  are the hills" read; the long-incline underlay then shifts to a yellower gold
+  so it stays clear of the red.
   - *Hardest climb.* The listed climbs are red; each stays one unbroken band,
     its segments showing their own grades with any sub-3 % spot inside lifted to
     the palest step so the band never breaks.

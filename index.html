@@ -94,8 +94,10 @@
     <form method="dialog"><button class="dialog-close" aria-label="Close">×</button></form>
     <h2 id="howto-title">How to read this map</h2>
     <ul>
-        <li><b>Color is steepness.</b> Roads are tinted on a 3–25 % grade scale: red for top-ranked items, indigo for other steep segments.</li>
-        <li><b>The amber underlay marks long inclines</b> — mostly-monotonic stretches averaging ≥ 3 %. Inclines can span several connected roads.</li>
+        <li><b>Color is steepness.</b> Roads are tinted on a 3–25 % grade scale. The <b>Color</b> toggle picks the scheme:
+            <dl><dt>Dual</dt><dd>red for the top-ranked items, indigo for every other steep segment</dd>
+                <dt>Single</dt><dd>one red scale for all steep segments, ranked or not</dd></dl></li>
+        <li><b>The amber underlay marks long inclines</b> — mostly-monotonic stretches averaging ≥ 3 %. Inclines can span several connected roads. (In Single-color mode it shifts to a yellower gold to stay clear of the red.)</li>
         <li><b>Pick what to rank by:</b>
             <dl><dt>Steepest</dt> <dd>best average grade over the sustained length</dd>
                 <dt>Hardest climb</dt><dd>gain × grade of a continuous climb</dd>
