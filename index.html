@@ -34,6 +34,12 @@
                     <input id="radius" type="number" min="1" max="15" step="0.5" value="5"> km
                 </label>
                 <button id="go" type="submit">Find steep roads</button>
+                <label id="color-ctrl">Color
+                    <select id="colormode" title="Dual: red for the top-ranked items, indigo for other steep segments. Single: one red scale for every steep segment.">
+                        <option value="dual" selected>Dual</option>
+                        <option value="single">Single</option>
+                    </select>
+                </label>
             </form>
             <div id="status" role="status" aria-live="polite"></div>
             <div id="progress"><div id="progress-fill"></div></div>

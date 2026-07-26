@@ -397,10 +397,11 @@ function render() {
         }
     }
 
+    const dualColor = byId('colormode').value !== 'single';
     layer?.remove();
     // Virtual incline roads draw last so their amber sits over the real roads'.
-    layer = drawRoads(map, [...drawn, ...inclineVirtuals], windowM, mode(), rankMode);
-    updateLegend(mode(), rankMode, entries.length);
+    layer = drawRoads(map, [...drawn, ...inclineVirtuals], windowM, mode(), rankMode, dualColor);
+    updateLegend(mode(), rankMode, entries.length, dualColor);
 
     renderList(byId('road-list'), entries, mode(), {
         rankMode,
@@ -461,6 +462,7 @@ function updateHash(query) {
         roads: String(+byId('inclineroads').value),
         n: String(+byId('listmax').value),
         mode: byId('rankmode').value,
+        color: byId('colormode').value,
     });
     history.replaceState(null, '', '#' + p.toString());
 }
@@ -531,6 +533,7 @@ byId('longlen').addEventListener('change', onControlChange);
 byId('inclineroads').addEventListener('change', onControlChange);
 byId('listmax').addEventListener('change', onControlChange);
 byId('rankmode').addEventListener('change', onControlChange);
+byId('colormode').addEventListener('change', onControlChange);
 darkQuery.addEventListener('change', () => {
     setMode(mode());
     render();
@@ -587,6 +590,8 @@ if (params.get('fixture')) {
             state = { roads: f.roads, center: f.center, radiusM: f.radiusM, label: f.center.label, cachedAt: null };
             if (['climb', 'sustained', 'incline'].includes(params.get('mode')))
                 byId('rankmode').value = params.get('mode');
+            if (['dual', 'single'].includes(params.get('color')))
+                byId('colormode').value = params.get('color');
             if (params.get('roads'))
                 byId('inclineroads').value = params.get('roads');
             map.fitBounds(L.latLng(f.center.lat, f.center.lon).toBounds(f.radiusM * 2));
@@ -611,6 +616,8 @@ else if (params.get('q')) {
         byId('listmax').value = params.get('n');
     if (['sustained', 'climb', 'incline'].includes(params.get('mode')))
         byId('rankmode').value = params.get('mode');
+    if (['dual', 'single'].includes(params.get('color')))
+        byId('colormode').value = params.get('color');
     void run();
 }
 else {

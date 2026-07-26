@@ -166,18 +166,23 @@ export function initMap(el, mode) {
 
     const barDiv = bg => `<div class="legend-bar" style="background:${bg}"></div>`;
     const ticks = `<div class="legend-ticks"><span>${Math.round(GRADE_MIN * 100)}%</span><span>${+((GRADE_MIN + GRADE_MAX) * 50).toFixed(1)}%</span><span>${Math.round(GRADE_MAX * 100)}%+</span></div>`;
-    const updateLegend = (m, rankMode = 'sustained', topN = 25) => {
+    const updateLegend = (m, rankMode = 'sustained', topN = 25, dualColor = true) => {
         // Below the ticks and swatch-sized, so the % scale clearly doesn't
         // apply to the categorical grind color.
         const grindRow = `<div class="legend-row legend-grind"><div class="legend-swatch" style="background:${GRIND_COLORS[m]};opacity:${GRIND_OPACITY}"></div><span class="legend-label">long incline (≥${+(GRIND_MIN_GRADE * 100).toFixed(2)}%)</span></div>`;
-        // Every mode reserves red for the listed items and indigo for the rest.
+        // Dual mode reserves red for the listed items and indigo for the rest.
         // Sustained mode's red marks each listed road's ranked best stretch —
-        // not the whole road — so the label says stretches, not roads.
+        // not the whole road — so the label says stretches, not roads. Single
+        // mode paints everything red, so one unlabeled red scale stands in for
+        // both rows.
         const noun = rankMode === 'climb' ? 'climbs' : rankMode === 'incline' ? 'inclines' : 'stretches';
         const listLabel = `top ${topN} ${noun}`;
+        const rampRows = dualColor
+            ? `<div class="legend-row">${barDiv(rampCss(RAMPS[m]))}<span class="legend-label">${listLabel}</span></div>
+               <div class="legend-row">${barDiv(rampCss(RAMPS_ALT[m]))}<span class="legend-label">other steep</span></div>`
+            : `<div class="legend-row">${barDiv(rampCss(RAMPS[m]))}<span class="legend-label">steep segments</span></div>`;
         legendDiv.innerHTML = `<div class="legend-title">grade</div>
-               <div class="legend-row">${barDiv(rampCss(RAMPS[m]))}<span class="legend-label">${listLabel}</span></div>
-               <div class="legend-row">${barDiv(rampCss(RAMPS_ALT[m]))}<span class="legend-label">other steep</span></div>
+               ${rampRows}
                ${ticks}${grindRow}`;
     };
     updateLegend(mode);
@@ -654,9 +659,12 @@ function segmentQuads(geom, verts, iStart, iEnd, widthAt, cap = 0) {
 // In climb mode, highlighting emphasizes the winning climb's chunks and dims
 // the rest; a faint full-road skeleton appears on hover in both modes so the
 // road's extent (including unpainted flats) stays legible.
-export function drawRoads(map, ranked, windowM, mode, rankMode = 'sustained') {
+export function drawRoads(map, ranked, windowM, mode, rankMode = 'sustained', dualColor = true) {
     const color = makeGradeColor(RAMPS[mode]);
-    const colorAlt = makeGradeColor(RAMPS_ALT[mode]);
+    // Single-color mode paints ranked and merely-steep segments the same red, so
+    // the alternate (indigo) ramp collapses onto the primary one. Prominence is
+    // still computed (it drives climb-mode highlighting), it just isn't hued.
+    const colorAlt = dualColor ? makeGradeColor(RAMPS_ALT[mode]) : color;
     // Incline underlays live in their own pane just below the overlay pane:
     // structurally beneath every steep ribbon, drawn opaque, faded once via
     // the pane's CSS opacity.

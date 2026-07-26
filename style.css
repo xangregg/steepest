@@ -165,6 +165,9 @@ body {
     gap: 10px 16px;
     align-items: center;
 }
+/* Color toggle rides at the right end of the search row — display option, not a
+   search field, so it's pushed away from place/radius/go. */
+#color-ctrl { margin-left: auto; }
 #rank-controls {
     padding: 12px 12px;
     border-bottom: 1px solid var(--hairline);
