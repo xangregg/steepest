@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- A town in profile climbing a steep red road: a connected skyline with a
+       jagged roofline sits on a red ramp. Theme-aware: buildings go dark on
+       light backgrounds, light on dark; the road keeps its brand red. -->
+  <style>
+    .bld { fill: #3e3e3e; }
+    .road { stroke: #dd2c22; }
+    @media (prefers-color-scheme: dark) {
+      .bld { fill: #d4d4d4; }
+      .road { stroke: #e5352a; }
+    }
+  </style>
+  <path class="bld" d="M3 26.5 V15 H9 V7 H14 V11 H21 V2 H28 V14.5 Z"/>
+  <line class="road" x1="2" y1="29" x2="30" y2="16" stroke-width="4.5" stroke-linecap="round"/>
+</svg>

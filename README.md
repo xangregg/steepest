@@ -1,5 +1,7 @@
 # Steepest Road in Town
 
+<img align="right" width="96" alt="A town skyline climbing a steep red road" src="favicon.svg">
+
 A static web app that answers the question: **what's the steepest road in town?**
 Enter a place and get a map of roads colored by steepness plus a ranked bar list
 of the steepest ones. A handful of inputs (below) tune the search area and how
@@ -10,6 +12,8 @@ no database, so it hosts happily on GitHub Pages —
 **[try it live](https://xangregg.github.io/steepest/)**.
 
 Code and docs were largely written using Claude Code (Fable 5 and Opus 4.8).
+
+![A slice of the steepness map: streets shaded red where they are steepest and indigo where merely steep, with an amber underlay marking long inclines, over a light street basemap.](steepest-header.png)
 
 ## Inputs
 
