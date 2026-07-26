@@ -560,6 +560,7 @@ darkQuery.addEventListener('change', () => {
 // Dev-tools hook for live style experiments (re-renders from cached data):
 //   steepest.grind({ light: '#8a93a5', opacity: 0.4 })
 //   steepest.grind({ dark: '#5f6a78' })
+//   steepest.grind({ single: true, light: '#b8a41a' })  // single-color-mode gold
 //   steepest.ramp({ light: { mid: '#ff0000', hi: '#330000' } })
 //   steepest.ramp({ hue: 'indigo', dark: { mid: '#9a6cff' } })
 //   steepest.width({ refZoom: 14, zoomStep: 1.3, factorMin: 0.25, factorMax: 8, curvyMax: 1, curvyTurn: 0.025 })

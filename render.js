@@ -54,17 +54,23 @@ export const RAMPS_ALT = {
 // underlay beneath the steepness ribbons, mostly obscured where steep colors
 // sit on top, peeking out where the incline ribbon runs wider.
 export const GRIND_COLORS = { light: '#dd9922', dark: '#e9b04a' };
+// Single-color mode paints every steep segment red, and the default amber is
+// red-adjacent enough to blend into it. This yellower, slightly greener gold
+// keeps the warm long-incline character while standing clear of the reds.
+export const GRIND_COLORS_SINGLE = { light: '#b8a41a', dark: '#d4c24a' };
 // Applied as CSS opacity on the inclines pane (not per polygon), so
 // overlapping ribbons — parallel carriageways, crossing inclines — merge into
 // one solid shape before the fade and never double-darken.
 let GRIND_OPACITY = 0.4;
 
 // Live style experimentation (see the window.steepest dev hook in app.js).
-export function setGrindStyle({ light, dark, opacity } = {}) {
+// `single: true` targets the single-color-mode gold instead of the dual amber.
+export function setGrindStyle({ light, dark, opacity, single = false } = {}) {
+    const target = single ? GRIND_COLORS_SINGLE : GRIND_COLORS;
     if (light)
-        GRIND_COLORS.light = light;
+        target.light = light;
     if (dark)
-        GRIND_COLORS.dark = dark;
+        target.dark = dark;
     if (opacity !== undefined)
         GRIND_OPACITY = opacity;
 }
@@ -169,7 +175,8 @@ export function initMap(el, mode) {
     const updateLegend = (m, rankMode = 'sustained', topN = 25, dualColor = true) => {
         // Below the ticks and swatch-sized, so the % scale clearly doesn't
         // apply to the categorical grind color.
-        const grindRow = `<div class="legend-row legend-grind"><div class="legend-swatch" style="background:${GRIND_COLORS[m]};opacity:${GRIND_OPACITY}"></div><span class="legend-label">long incline (≥${+(GRIND_MIN_GRADE * 100).toFixed(2)}%)</span></div>`;
+        const grindColor = (dualColor ? GRIND_COLORS : GRIND_COLORS_SINGLE)[m];
+        const grindRow = `<div class="legend-row legend-grind"><div class="legend-swatch" style="background:${grindColor};opacity:${GRIND_OPACITY}"></div><span class="legend-label">long incline (≥${+(GRIND_MIN_GRADE * 100).toFixed(2)}%)</span></div>`;
         // Dual mode reserves red for the listed items and indigo for the rest.
         // Sustained mode's red marks each listed road's ranked best stretch —
         // not the whole road — so the label says stretches, not roads. Single
@@ -665,6 +672,9 @@ export function drawRoads(map, ranked, windowM, mode, rankMode = 'sustained', du
     // the alternate (indigo) ramp collapses onto the primary one. Prominence is
     // still computed (it drives climb-mode highlighting), it just isn't hued.
     const colorAlt = dualColor ? makeGradeColor(RAMPS_ALT[mode]) : color;
+    // In single-color mode the steep ribbons are all red, so the long-incline
+    // underlay swaps its red-adjacent amber for a yellower gold to stay legible.
+    const grindColors = dualColor ? GRIND_COLORS : GRIND_COLORS_SINGLE;
     // Incline underlays live in their own pane just below the overlay pane:
     // structurally beneath every steep ribbon, drawn opaque, faded once via
     // the pane's CSS opacity.
@@ -892,7 +902,7 @@ export function drawRoads(map, ranked, windowM, mode, rankMode = 'sustained', du
                     let best = 0;
                     for (let m = kStart; m < kEnd; m++)
                         best = Math.max(best, road.segs?.[m] ?? 0);
-                    const c = GRIND_COLORS[mode];
+                    const c = grindColors[mode];
                     const widthAt = runWidthAt(kStart, kEnd);
                     const iStart = dp.sampleIdx[kStart], iEnd = dp.sampleIdx[kEnd];
                     const ring = ribbonRing(geom, dp.verts, iStart, iEnd, widthAt, RIBBON_MITER_MAX);
