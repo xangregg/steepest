@@ -167,7 +167,31 @@ body {
 }
 /* Color toggle rides at the right end of the search row — display option, not a
    search field, so it's pushed away from place/radius/go. */
-#color-ctrl { margin-left: auto; }
+#color-ctrl { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; }
+/* Segmented control: buttons joined edge-to-edge, the active one filled with the
+   accent — one click to switch, no dropdown. Pattern borrowed from the comma app,
+   retinted to the theme tokens so it works in light and dark. */
+.segmented { display: inline-flex; }
+.seg-btn {
+    font: inherit;
+    color: var(--ink-2);
+    background: var(--page);
+    border: 1px solid var(--hairline);
+    padding: 5px 12px;
+    margin-left: -1px; /* collapse the shared edge so neighbors share one border */
+    cursor: pointer;
+}
+.seg-btn:first-child { border-radius: 6px 0 0 6px; margin-left: 0; }
+.seg-btn:last-child { border-radius: 0 6px 6px 0; }
+.seg-btn:hover:not(.selected) { color: var(--ink); border-color: var(--muted); }
+.seg-btn.selected {
+    color: #fff;
+    background: var(--accent);
+    border-color: var(--accent);
+    position: relative; /* lift the selected button so its full border shows over the seam */
+    z-index: 1;
+}
+.seg-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 #rank-controls {
     padding: 12px 12px;
     border-bottom: 1px solid var(--hairline);

@@ -397,7 +397,7 @@ function render() {
         }
     }
 
-    const dualColor = byId('colormode').value !== 'single';
+    const dualColor = colorMode() !== 'single';
     layer?.remove();
     // Virtual incline roads draw last so their amber sits over the real roads'.
     layer = drawRoads(map, [...drawn, ...inclineVirtuals], windowM, mode(), rankMode, dualColor);
@@ -462,7 +462,7 @@ function updateHash(query) {
         roads: String(+byId('inclineroads').value),
         n: String(+byId('listmax').value),
         mode: byId('rankmode').value,
-        color: byId('colormode').value,
+        color: colorMode(),
     });
     history.replaceState(null, '', '#' + p.toString());
 }
@@ -533,7 +533,25 @@ byId('longlen').addEventListener('change', onControlChange);
 byId('inclineroads').addEventListener('change', onControlChange);
 byId('listmax').addEventListener('change', onControlChange);
 byId('rankmode').addEventListener('change', onControlChange);
-byId('colormode').addEventListener('change', onControlChange);
+
+// Color mode is a segmented control (joined buttons), not a form field: read the
+// active button, set it by toggling .selected, and re-render on a click.
+const colorSeg = byId('colormode');
+const colorMode = () => colorSeg.querySelector('.seg-btn.selected')?.dataset.color ?? 'dual';
+const setColorMode = value => {
+    for (const b of colorSeg.querySelectorAll('.seg-btn')) {
+        const on = b.dataset.color === value;
+        b.classList.toggle('selected', on);
+        b.setAttribute('aria-pressed', String(on));
+    }
+};
+colorSeg.addEventListener('click', e => {
+    const btn = e.target.closest('.seg-btn');
+    if (!btn || btn.classList.contains('selected'))
+        return;
+    setColorMode(btn.dataset.color);
+    onControlChange();
+});
 darkQuery.addEventListener('change', () => {
     setMode(mode());
     render();
@@ -591,7 +609,7 @@ if (params.get('fixture')) {
             if (['climb', 'sustained', 'incline'].includes(params.get('mode')))
                 byId('rankmode').value = params.get('mode');
             if (['dual', 'single'].includes(params.get('color')))
-                byId('colormode').value = params.get('color');
+                setColorMode(params.get('color'));
             if (params.get('roads'))
                 byId('inclineroads').value = params.get('roads');
             map.fitBounds(L.latLng(f.center.lat, f.center.lon).toBounds(f.radiusM * 2));
@@ -617,7 +635,7 @@ else if (params.get('q')) {
     if (['sustained', 'climb', 'incline'].includes(params.get('mode')))
         byId('rankmode').value = params.get('mode');
     if (['dual', 'single'].includes(params.get('color')))
-        byId('colormode').value = params.get('color');
+        setColorMode(params.get('color'));
     void run();
 }
 else {
