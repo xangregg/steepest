@@ -4,7 +4,8 @@
 //
 // A road object accumulates fields as it moves through the pipeline:
 //   pts       original OSM polyline [{lat, lon, b?}] (b = bridge/tunnel)
-//   samples   ~25 m arc-length resampling [{lat, lon, d, b?}] (d = meters along road)
+//   samples   ~25 m arc-length resampling [{lat, lon, d, b?}] (d = meters along
+//             road; b also set where the road passes under a bridge)
 //   elev      smoothed, bridge-corrected elevation per sample
 //   length, eMin, eMax
 // and per render (cheap, recomputed on control changes):
@@ -18,7 +19,7 @@
 //               road's listed climbs; sustained mode: the listed road's best
 //               window) — those wear red on the map, the rest indigo
 
-import { parseLatLon, geocode, fetchRoads, prepareRoads } from './roads.js';
+import { parseLatLon, geocode, fetchRoads, prepareRoads, bridgeIndex, markUnderpasses } from './roads.js';
 import { elevatePoints } from './elevation.js';
 import { resample, analyzeRoad, segmentSustained, sustainedStretches, hardestClimbs, grindMask, longestInclinePaths, SAMPLE_STEP, STRETCH_COL_FRAC } from './metrics.js';
 import { initMap, drawRoads, renderList, setGrindStyle, setRampStyle, setWidthStyle, shortLabel, GRADE_MIN } from './render.js';
@@ -93,7 +94,9 @@ async function run(refresh = false) {
         finally {
             clearInterval(tick);
         }
-        const roads = prepareRoads(elements).map(r => ({ ...r, samples: resample(r.pts) }))
+        const decks = bridgeIndex(elements);
+        const roads = prepareRoads(elements)
+            .map(r => ({ ...r, samples: markUnderpasses(r.pts, resample(r.pts), decks) }))
             .filter(r => r.samples.length >= 3); // need >= ~50 m to say anything
 
         if (!roads.length)

@@ -1,11 +1,12 @@
 // Unit checks (no network): stitching gates, resampling, the metric math,
-// climb extraction, long-incline masking, bridge/tunnel deck interpolation,
+// climb extraction, long-incline masking, bridge/tunnel/underpass elevation,
 // CSV export, and name abbreviation — all on synthetic profiles. Run with
 // `npm test`. The live end-to-end run (Nominatim/Overpass/terrain tiles) is in
 // live.test.mjs (`npm run test:live`), so the default test suite needs no
 // network.
 
-import { parseLatLon, prepareRoads } from '../roads.js';
+import { readFileSync } from 'node:fs';
+import { parseLatLon, prepareRoads, bridgeIndex, markUnderpasses } from '../roads.js';
 import { assert } from './assert.mjs';
 
 // Stitching bearing gate: same-name ways merge straight through a join but
@@ -323,6 +324,65 @@ const allBridge = resample([{ lat: 35, lon: -82.6, b: true }, { lat: 35.009, lon
 const valley = allBridge.map(s => 100 + s.d * 0.02 - (s.d > 200 && s.d < 800 ? 35 : 0));
 const deck = sustainedGrade(allBridge, analyzeRoad(allBridge, valley).elev, 100);
 assert(deck < 0.03, `all-bridge chain reads as its deck: ${(deck * 100).toFixed(1)}%`);
+
+// Underpasses: the mirror of the bridge case. A road crossed by a bridge deck
+// with no shared node passes underneath, and its elevation samples read the deck
+// overhead. Modelled on Fordham Blvd over Raleigh Rd, Chapel Hill, where the
+// terrarium tiles put a ~6 m hump (a fake ~14 % pitch) on a flat street.
+const eastWest = (id, lat, tags = {}) => ({
+    type: 'way', id, tags: { highway: 'residential', name: 'Under St', ...tags },
+    geometry: [{ lat, lon: -82.3 }, { lat, lon: -82.29 }],   // ~900 m due east
+});
+const deckOver = (id, lon, tags = {}) => ({
+    type: 'way', id, tags: { highway: 'motorway', bridge: 'yes', layer: '1', ...tags },
+    geometry: [{ lat: 34.998, lon }, { lat: 35.002, lon }],  // crosses north-south
+});
+const underRoad = prepareRoads([eastWest(20, 35)])[0];
+const overIdx = bridgeIndex([deckOver(21, -82.295)]);
+const under = markUnderpasses(underRoad.pts, resample(underRoad.pts), overIdx);
+const marked = under.filter(s => s.b);
+const crossD = under[under.length - 1].d / 2;   // deck crosses the midpoint
+assert(marked.length >= 3 && marked.every(s => Math.abs(s.d - crossD) <= 45),
+    `underpass flags the crossing and only its surroundings (${marked.length} samples)`);
+assert(prepareRoads([eastWest(20, 35), deckOver(21, -82.295)]).length === 1,
+    'the overpass itself is not ranked as a road');
+// The hump the deck leaves in the elevation model must interpolate away.
+const humped = under.map(s => 100 + 6 * Math.max(0, 1 - Math.abs(s.d - crossD) / 45));
+const humpFixed = analyzeRoad(under, humped).elev;
+const humpRaw = analyzeRoad(under.map(({ lat, lon, d }) => ({ lat, lon, d })), humped).elev;
+assert(Math.max(...humpFixed) - Math.min(...humpFixed) < 1,
+    `deck hump interpolated away (${(Math.max(...humpFixed) - Math.min(...humpFixed)).toFixed(1)} m left of 6 m)`);
+assert(Math.max(...humpRaw) - Math.min(...humpRaw) > 5, 'sanity: the untreated hump is really there');
+// At-grade crossings share a node, so the ways touch instead of crossing: a
+// deck that merely ends on the road (an abutment at a junction) means nothing.
+const touching = markUnderpasses(underRoad.pts, resample(underRoad.pts),
+    bridgeIndex([{ ...deckOver(22, -82.295), geometry: [{ lat: 35, lon: -82.295 }, { lat: 35.002, lon: -82.295 }] }]));
+assert(!touching.some(s => s.b), 'a deck ending on the road (shared node) is not an underpass');
+// Contradictory data — a bridge tagged at or below the roadway — is ignored.
+assert(!markUnderpasses(underRoad.pts, resample(underRoad.pts),
+    bridgeIndex([deckOver(23, -82.295, { layer: '-1' })])).some(s => s.b),
+    'a bridge tagged below the roadway is not treated as an overpass');
+// A road already flagged (its own deck or bore) is left to the bridge logic.
+const ownDeck = prepareRoads([eastWest(24, 35, { bridge: 'yes' })])[0];
+assert(resample(ownDeck.pts).every(s => s.b),
+    'a road on its own bridge keeps every sample flagged either way');
+
+// The real case, from the committed fixture (processed offline, no network):
+// Raleigh Rd under Fordham Blvd. Untreated, the terrarium tiles read 88.7 m ->
+// 94.3 m -> 90.2 m across the interchange — a ~22 % segment grade on a street
+// that is nearly flat there.
+const fixture = JSON.parse(readFileSync(new URL('./fixtures/underpass.json', import.meta.url), 'utf8'));
+const raleigh = fixture.roads
+    .filter(r => r.name === 'Raleigh Road')
+    .find(r => r.samples.some(s => Math.hypot(s.lat - 35.90879, s.lon + 79.02690) < 3e-4));
+const nearCross = raleigh.samples
+    .map((s, i) => ({ i, s, off: Math.hypot((s.lat - 35.90879) * 111320, (s.lon + 79.02690) * 90000) }))
+    .filter(x => x.off < 120);
+assert(nearCross.some(x => x.s.b), 'fixture: Raleigh Rd is flagged where Fordham Blvd crosses it');
+const underGrades = nearCross.slice(0, -1)
+    .map(x => Math.abs(raleigh.elev[x.i + 1] - raleigh.elev[x.i]) / (raleigh.samples[x.i + 1].d - x.s.d));
+assert(Math.max(...underGrades) < 0.04,
+    `fixture: no fake pitch left under the interchange (${(Math.max(...underGrades) * 100).toFixed(1)}%)`);
 
 // DEM seam despiking: a real Fonllech Hir profile (Harlech) crosses a ~92 m
 // step artifact in the terrarium tiles, so a weaving road reads ~243 m, dips

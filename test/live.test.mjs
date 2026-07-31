@@ -6,7 +6,7 @@
 // rate limits, so it can be slow or need a retry.
 
 import { PNG } from 'pngjs';
-import { geocode, fetchRoads, prepareRoads } from '../roads.js';
+import { geocode, fetchRoads, prepareRoads, bridgeIndex, markUnderpasses } from '../roads.js';
 import { elevatePoints } from '../elevation.js';
 import { resample, analyzeRoad, sustainedGrade } from '../metrics.js';
 import { assert } from './assert.mjs';
@@ -24,7 +24,10 @@ console.log(`geocoded: ${center.label} (${center.lat}, ${center.lon})`);
 assert(Math.abs(center.lat - 35.23) < 0.2 && Math.abs(center.lon + 82.73) < 0.2, 'geocode near expected coords');
 
 const elements = await fetchRoads(center, 2500);
-const roads = prepareRoads(elements).map(r => ({ ...r, samples: resample(r.pts) })).filter(r => r.samples.length >= 3);
+const decks = bridgeIndex(elements);
+const roads = prepareRoads(elements)
+    .map(r => ({ ...r, samples: markUnderpasses(r.pts, resample(r.pts), decks) }))
+    .filter(r => r.samples.length >= 3);
 assert(roads.length > 50, `found ${roads.length} roads`);
 const stitched = roads.filter(r => !r.unnamed).length;
 console.log(`   ${stitched} named road chains after stitching`);

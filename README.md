@@ -44,7 +44,7 @@ Code and docs were largely written using Claude Code (Fable 5 and Opus 4.8).
 2. **Fetch** all drivable OpenStreetMap _ways_ within the radius and stitch them
    into continuous named roads.
 3. **Sample** each road's elevation every ~25 m from public terrain tiles,
-   correcting bridges, tunnels, and dataset seams.
+   correcting bridges, tunnels, underpasses, and dataset seams.
 4. **Rank** three ways:
    - **Steepest** — best average grade over a stretch of the chosen length.
    - **Hardest climb** — an effort score, roughly gain × average grade.
@@ -82,6 +82,13 @@ tracks, and paths).
   elevations are replaced by a straight-line deck between the solid ground at
   each end, so the elevation model reports the gorge under a bridge, not the
   roadway.
+- **Underpasses.** The mirror case: nothing tags the road *underneath* a bridge,
+  yet the terrain tiles read the deck overhead, putting a metre-scale hump on a
+  flat street. OSM gives at-grade junctions a shared node, so a road whose
+  geometry crosses a bridge *between* nodes must pass under it — those samples
+  get the same straight-line treatment, 40 m either side of the crossing.
+  Motorway, ramp and railway bridges are fetched for this even though they are
+  never ranked (bridge-tagged ways only, tens of kB).
 
 ### Elevation
 
@@ -203,7 +210,9 @@ same grade in every town.
   where travel continues straight through the join (bearing gate), TIGER
   `name_base`/`name_type` tags must agree, and three-end junctions (a two-way
   road becoming a divided road) merge their straightest pair. Bridge/tunnel
-  points are flagged for elevation correction.
+  points are flagged for elevation correction, as are the samples of a road
+  found (by `bridgeIndex`/`markUnderpasses`) to cross under someone else's
+  bridge.
 - `elevation.js` — terrarium PNG tile decoding and bilinear sampling, with a
   module-level tile cache and a pluggable decoder (canvas in the browser,
   pngjs in Node tests).
@@ -227,8 +236,9 @@ same grade in every town.
   exercising every rendering rule; `test/cache.html` and `test/cache-unit.html`
   cover the IndexedDB cache in a real browser. `test/make-fixture.mjs` captures a
   real search into `test/fixtures/<name>.json` (e.g. the committed
-  `brevard.json`), which the app renders offline via `#fixture=<name>` — for
-  checking the UI without Overpass.
+  `brevard.json`, and `underpass.json` for the Fordham Blvd/Raleigh Rd
+  interchange in Chapel Hill), which the app renders offline via
+  `#fixture=<name>` — for checking the UI without Overpass.
 
 ## Running locally
 
@@ -246,12 +256,12 @@ open http://localhost:8080
 useful for demos or UI work when the public APIs are slow, e.g.
 `http://localhost:8080/#fixture=brevard`. Capture more (or refresh this one)
 with `node test/make-fixture.mjs "<place>" <radius_m> <name>` when Overpass is
-responsive.
+responsive; `<place>` may be a `lat, lon` pair to centre on a specific feature.
 
 ## Testing
 
 `npm test` runs the network-free unit checks (stitching, resampling, the metric
-and climb math, long-incline masking, multi-road incline paths, bridge/tunnel
+and climb math, long-incline masking, multi-road incline paths, bridge/tunnel/underpass
 interpolation, CSV export) on synthetic profiles — fast and safe for CI, no
 network needed.
 

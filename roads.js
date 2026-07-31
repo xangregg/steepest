@@ -18,6 +18,18 @@ const USER_AGENT = 'steepest-roads/1.0 (+https://github.com/xangregg/steepest)';
 // Road classes worth ranking. Excludes service (driveways, parking aisles),
 // tracks, and paths.
 const HIGHWAY_RE = 'residential|unclassified|living_street|tertiary|secondary|primary|trunk';
+const RANKED_RE = new RegExp(`^(${HIGHWAY_RE})$`);
+
+// Decks that are never ranked but still have to be fetched: a ranked road
+// passing under one reads the deck's elevation instead of its own (see
+// markUnderpasses). Motorways and their ramps are the common overpass, and
+// railways are close behind. Asking for the bridge-tagged ways only keeps this
+// to tens of kB beside a multi-megabyte road network.
+const BRIDGE_HIGHWAY_RE = 'motorway|motorway_link|trunk_link|primary_link|secondary_link|tertiary_link|service';
+// Vehicle- and rail-carrying decks only. A footbridge is too narrow to shift a
+// ~15 m elevation cell, so treating one would linearize real road for nothing;
+// abandoned/disused railways are left out because the structure may be gone.
+const BRIDGE_RAILWAY_RE = 'rail|light_rail|subway|tram|narrow_gauge|monorail|funicular';
 
 // "35.2, -82.7" -> {lat, lon, label} or null if the text isn't a coordinate pair.
 export function parseLatLon(text) {
@@ -62,11 +74,18 @@ export async function geocode(query, signal) {
     return result;
 }
 
-// All drivable roads within radiusM of center, as raw Overpass way elements.
-// onBytes(n) streams download progress; onNote(msg) reports retries.
+// All drivable roads within radiusM of center, as raw Overpass way elements,
+// plus the unranked bridge decks over them (prepareRoads drops those from the
+// ranking; bridgeIndex keeps them). onBytes(n) streams download progress;
+// onNote(msg) reports retries.
 export async function fetchRoads(center, radiusM, { signal, onBytes, onNote } = {}) {
+    const around = `(around:${Math.round(radiusM)},${center.lat},${center.lon})`;
     const q = `[out:json][timeout:90];
-way["highway"~"^(${HIGHWAY_RE})$"](around:${Math.round(radiusM)},${center.lat},${center.lon});
+(
+way["highway"~"^(${HIGHWAY_RE})$"]${around};
+way["bridge"]["highway"~"^(${BRIDGE_HIGHWAY_RE})$"]${around};
+way["bridge"]["railway"~"^(${BRIDGE_RAILWAY_RE})$"]${around};
+);
 out geom;`;
     let lastErr;
     // Two passes over the mirrors with a pause between: public Overpass
@@ -124,7 +143,9 @@ out geom;`;
 // so a creek crossing doesn't sever the road and truncate its climbs.
 export function prepareRoads(elements) {
     const ways = elements
-        .filter(el => el.type === 'way' && el.geometry?.length >= 2)
+        // The response also carries unranked decks (motorway, ramp, railway)
+        // fetched only so underpasses can be found — they are not roads to rank.
+        .filter(el => el.type === 'way' && el.geometry?.length >= 2 && RANKED_RE.test(el.tags?.highway ?? ''))
         .map(el => {
             const b = !!(el.tags?.bridge || el.tags?.tunnel);
             return {
@@ -260,4 +281,119 @@ function stitchGroup(ways) {
         }
     }
     return ways;
+}
+
+// --- Underpasses -----------------------------------------------------------
+// A bridge carries its road above the terrain, so its own samples read the
+// gorge below (handled by the b flag). The mirror case is the road *underneath*:
+// nothing in OSM tags it — the crossing is implicit in the geometry — yet the
+// elevation model reads the deck overhead, so a flat street picks up a metre-
+// scale hump where an interchange or railway crosses it. Fordham Blvd over
+// Raleigh Rd in Chapel Hill adds ~6 m, a fake ~14 % pitch.
+//
+// OSM's own rule makes the crossings findable: ways that meet at grade share a
+// node, so two ways whose segments cross strictly *between* their nodes are on
+// different levels. If the upper one is a bridge and the lower one is not, the
+// lower one is in an underpass, and its samples get the same flag — and the
+// same straight-line interpolation from solid ground either side — a bridge
+// deck gets.
+
+// Half-width of road treated as unreliable either side of a crossing point. The
+// crossing locates the deck's centerline; the elevation is spoiled across the
+// structure's footprint (~30 m for a divided highway, more at a skew) smeared by
+// the ~15 m elevation cell. Windows from neighboring crossings merge into one
+// run, so a multi-carriageway interchange widens itself.
+const UNDERPASS_HALF = 40;  // m
+
+const CELL = 0.002;  // deg (~200 m) — grid cell for looking up nearby decks
+
+const cellsOf = (latLo, latHi, lonLo, lonHi, fn) => {
+    for (let a = Math.floor(latLo / CELL); a <= Math.floor(latHi / CELL); a++)
+        for (let o = Math.floor(lonLo / CELL); o <= Math.floor(lonHi / CELL); o++)
+            fn(`${a},${o}`);
+};
+
+// Every bridge deck in the response (ranked class or not) as a grid of segments,
+// so a road is tested against the few decks near it instead of all of them.
+export function bridgeIndex(elements) {
+    const grid = new Map();
+    for (const el of elements) {
+        if (el.type !== 'way' || !el.tags?.bridge || !(el.geometry?.length >= 2))
+            continue;
+        // A bridge tag with a layer at or below the roadway is contradictory
+        // data; skip it rather than linearize a road on its word.
+        const layer = el.tags.layer != null ? +el.tags.layer : 1;
+        if (!(layer > 0))
+            continue;
+        for (let i = 1; i < el.geometry.length; i++) {
+            const seg = [el.geometry[i - 1], el.geometry[i]];
+            cellsOf(
+                Math.min(seg[0].lat, seg[1].lat), Math.max(seg[0].lat, seg[1].lat),
+                Math.min(seg[0].lon, seg[1].lon), Math.max(seg[0].lon, seg[1].lon),
+                key => {
+                    if (!grid.has(key))
+                        grid.set(key, []);
+                    grid.get(key).push(seg);
+                });
+        }
+    }
+    return grid;
+}
+
+const M_PER_DEG = 111320;
+
+// Where segments ab and cd cross strictly inside both: fraction along ab, else
+// null. Endpoint touches (t or u at 0 or 1) are at-grade junctions — OSM gives
+// those a shared node — so only interior crossings count as grade separation.
+function crossFrac(a, b, c, d) {
+    const kx = Math.cos(((a.lat + b.lat) / 2) * Math.PI / 180) * M_PER_DEG;
+    const ax = a.lon * kx, ay = a.lat * M_PER_DEG, bx = b.lon * kx, by = b.lat * M_PER_DEG;
+    const cx = c.lon * kx, cy = c.lat * M_PER_DEG, dx = d.lon * kx, dy = d.lat * M_PER_DEG;
+    const rx = bx - ax, ry = by - ay, sx = dx - cx, sy = dy - cy;
+    const den = rx * sy - ry * sx;
+    if (den === 0)
+        return null;  // parallel or degenerate
+    const t = ((cx - ax) * sy - (cy - ay) * sx) / den;
+    const u = ((cx - ax) * ry - (cy - ay) * rx) / den;
+    const EPS = 1e-9;
+    if (t <= EPS || t >= 1 - EPS || u <= EPS || u >= 1 - EPS)
+        return null;
+    return t;
+}
+
+// Flag the samples of a road wherever it passes under a bridge, so the deck
+// interpolation in metrics.js replaces the overhead structure's elevation.
+// pts is the road's own polyline (its distances match samples' d), index comes
+// from bridgeIndex(). Mutates and returns samples.
+export function markUnderpasses(pts, samples, index) {
+    if (!index?.size)
+        return samples;
+    const cuts = [];
+    let cum = 0;
+    for (let i = 1; i < pts.length; i++) {
+        const a = pts[i - 1], b = pts[i];
+        const len = haversine(a, b);
+        // A segment already flagged is itself a deck or a bore; what crosses it
+        // belongs to some other level.
+        if (!(a.b && b.b)) {
+            const near = new Set();
+            cellsOf(
+                Math.min(a.lat, b.lat), Math.max(a.lat, b.lat),
+                Math.min(a.lon, b.lon), Math.max(a.lon, b.lon),
+                key => { for (const seg of index.get(key) ?? []) near.add(seg); });
+            for (const seg of near) {
+                const t = crossFrac(a, b, seg[0], seg[1]);
+                if (t != null)
+                    cuts.push(cum + t * len);
+            }
+        }
+        cum += len;
+    }
+    for (const d of cuts) {
+        for (const s of samples) {
+            if (Math.abs(s.d - d) <= UNDERPASS_HALF)
+                s.b = true;
+        }
+    }
+    return samples;
 }

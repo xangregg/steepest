@@ -7,7 +7,7 @@ import { PNG } from 'pngjs';
 import { writeFileSync, mkdirSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import { geocode, fetchRoads, prepareRoads } from '../roads.js';
+import { parseLatLon, geocode, fetchRoads, prepareRoads, bridgeIndex, markUnderpasses } from '../roads.js';
 import { elevatePoints } from '../elevation.js';
 import { resample, analyzeRoad } from '../metrics.js';
 
@@ -25,10 +25,14 @@ const decodeTile = async url => {
     return PNG.sync.read(Buffer.from(await res.arrayBuffer())).data;
 };
 
-const center = await geocode(query);
-console.log(`geocoded: ${center.label}`);
-const roads = prepareRoads(await fetchRoads(center, radiusM))
-    .map(r => ({ ...r, samples: resample(r.pts) }))
+// Coordinates accepted as well as place names, so a fixture can be centred on a
+// specific feature (an underpass, say) that no place name lands on.
+const center = parseLatLon(query) ?? await geocode(query);
+console.log(`centred on: ${center.label}`);
+const elements = await fetchRoads(center, radiusM);
+const decks = bridgeIndex(elements);
+const roads = prepareRoads(elements)
+    .map(r => ({ ...r, samples: markUnderpasses(r.pts, resample(r.pts), decks) }))
     .filter(r => r.samples.length >= 3);
 const points = roads.flatMap(r => r.samples);
 const elevs = await elevatePoints(points, { decodeTile });
