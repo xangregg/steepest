@@ -337,11 +337,52 @@ function ascentPrefixes(elev) {
 // Interior counter-slope beyond the tolerance disqualifies an interval.
 const dipTooBig = (gain, counter) => counter > Math.max(DIP_ABS, DIP_FRAC * (gain + counter));
 
+// A long incline should incline throughout: however forgiving the counter-slope
+// budget is about depth, no stretch of it should spend hundreds of meters going
+// nowhere. Counted as one contiguous run, not a total — scattered flat spots are
+// how real roads climb; half a kilometer of them in a row is two climbs with a
+// plateau between, reported as one.
+//
+// Absolute rather than a share of the span, because a flat spot is a fixed-size
+// feature (~100-250 m in the towns measured) and does not scale with the climb:
+// a share-based limit punishes short inclines for it, and dropped genuine
+// inclines in Pittsburgh and Durham at every setting that was no better here.
+// 300 m is a long enough respite to be a break in the climb rather than part of
+// it; below ~250 m real inclines start being cut apart.
+const DEAD_RUN_MAX = 300;       // m of consecutive non-inclining road allowed
+const DEAD_GRADE = GRIND_MIN_GRADE / 2;  // below this, as traveled, road is "dead"
+
+// Longest run inside [i..j] that doesn't advance the incline — flat, or running
+// backwards. ascending is the interval's direction of travel. Returns its length
+// and segment extent {len, from, to}, so a caller can cut the stall out rather
+// than guess where the incline broke.
+function deadRun(samples, elev, i, j, ascending) {
+    const worst = { len: 0, from: -1, to: -1 };
+    let start = -1;
+    for (let k = i; k < j; k++) {
+        const g = (elev[k + 1] - elev[k]) / (samples[k + 1].d - samples[k].d);
+        if ((ascending ? g : -g) < DEAD_GRADE) {
+            if (start < 0)
+                start = k;
+            const len = samples[k + 1].d - samples[start].d;
+            if (len > worst.len) {
+                worst.len = len;
+                worst.from = start;
+                worst.to = k;
+            }
+        }
+        else {
+            start = -1;
+        }
+    }
+    return worst;
+}
+
 // "Grind" mask: segments belonging to any long (>= minSpan), mostly monotonic
 // (same counter-slope tolerance as climbs), >= GRIND_MIN_GRADE average stretch
-// in either direction. Too gentle to color as steep, too substantial to leave
-// invisible. Returns a Uint8Array over segments, or null when nothing
-// qualifies.
+// in either direction that never stalls for more than DEAD_RUN_MAX. Too gentle
+// to color as steep, too substantial to leave invisible. Returns a Uint8Array
+// over segments, or null when nothing qualifies.
 export function grindMask(samples, elev, minSpan) {
     const n = samples.length;
     // Snap to the nearest whole segment, like segmentSustained.
@@ -362,6 +403,8 @@ export function grindMask(samples, elev, minSpan) {
                 continue;
             const counter = net > 0 ? down[j] - down[i] : up[j] - up[i];
             if (dipTooBig(gain, counter))
+                continue;
+            if (deadRun(samples, elev, i, j, net > 0).len > DEAD_RUN_MAX)
                 continue;
             diff[i]++;
             diff[j]--;
@@ -404,8 +447,23 @@ export function grindMask(samples, elev, minSpan) {
         const net = elev[b + 1] - elev[a];
         const gain = Math.abs(net);
         const counter = net > 0 ? down[b + 1] - down[a] : up[b + 1] - up[a];
-        if (gain / span >= GRIND_MIN_GRADE && !dipTooBig(gain, counter))
+        // The dead-run test only means anything once the run is known to head
+        // one way: on a run holding a whole summit, every metre of the ascent
+        // "fails to advance" the descent, and a hill is not a stall. Those fail
+        // the counter-slope test and belong to the reversal split below.
+        const oneWay = gain / span >= GRIND_MIN_GRADE && !dipTooBig(gain, counter);
+        const dead = oneWay ? deadRun(samples, elev, a, b + 1, net > 0) : null;
+        if (oneWay && dead.len <= DEAD_RUN_MAX)
             return; // a single coherent incline
+        // Sound in direction but stalling: the stall is no part of the incline.
+        // Cut it out and refine what is left either side — the reversal split
+        // below can't find a plateau, having no reversal to split at.
+        if (oneWay) {
+            clear(dead.from, dead.to);
+            refine(a, dead.from - 1);
+            refine(dead.to + 1, b);
+            return;
+        }
         // Deepest reversal: bottom of the largest drawdown or top of the
         // largest run-up, whichever is bigger (interior samples only).
         let maxE = elev[a], minE = elev[a];

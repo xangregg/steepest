@@ -131,6 +131,14 @@ Ranks are based on all the downloaded map data, not just the part in view.
   same mostly-monotonic, ≥ 3 % stretches (of at least the "long incline" length)
   that get the amber underlay, measuring how far the hill goes rather than how
   steep it gets.
+  - An incline has to incline throughout: no more than 300 m of it in a row may
+    be flat or running backwards. The counter-slope budget forgives a dip by its
+    depth, which says nothing about a *plateau* — without this, a climb, half a
+    kilometre of flat, and a second climb are reported as one long, gentle
+    incline, and the flat part is drawn as though it were climbing. The limit is
+    a fixed length rather than a share of the incline: a flat spot is a
+    fixed-size feature (~100–250 m in the towns measured) and doesn't scale with
+    the climb, so a share-based limit only punishes short inclines.
   - An incline may span several connected roads (the "over N roads" knob): a
     climb that continues across a junction onto a differently-named road is
     followed through a junction graph (built from coincident sample points, so it

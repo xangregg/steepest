@@ -251,6 +251,38 @@ assert(grindMask(flat, mkElev(d => d * 0.03 + 8 * Math.sin(d / 50)), 1000) === n
 // long-incline mark survives at all (the wall gets steepness paint anyway).
 assert(grindMask(flat, mkElev(d => Math.max(0, d - 500) * 0.1), 1000) === null,
     'flat-then-wall leaves no long-incline mark (incline itself too short)');
+// Dead-run cap: an incline may not stall for more than 400 m. A 3 km road that
+// climbs 1 km at 6%, sits flat for 500 m, then climbs 1 km at 6% is two climbs
+// with a plateau between, not one 2.5 km incline — the qualifying interval
+// averages 4.8% and its counter-slope is nil, so only the dead run rejects it.
+const plateau = resample([{ lat: 35, lon: -82.35 }, { lat: 35.027, lon: -82.35 }]); // ~3 km
+const plateauElev = d => (d <= 1000 ? d * 0.06 : d <= 1500 ? 60 : 60 + (d - 1500) * 0.06);
+const twoClimbs = analyzeRoad(plateau, plateau.map(s => plateauElev(s.d))).elev;
+const plateauInclines = longestInclines(plateau, twoClimbs, 800);
+const spansPlateau = i => plateau[i.i].d < 1000 && plateau[i.j].d > 1500;
+assert(plateauInclines.length === 2 && !plateauInclines.some(spansPlateau),
+    `500 m plateau splits the road into two inclines (${plateauInclines.map(i => `${plateau[i.i].d.toFixed(0)}–${plateau[i.j].d.toFixed(0)} m`).join(', ') || 'none'})`);
+assert(plateauInclines.every(i => Math.abs(i.grade - 0.06) < 0.005),
+    `each side reports its own 6% (${plateauInclines.map(i => (i.grade * 100).toFixed(1) + '%').join(', ')})`);
+// A 200 m breather is under the cap, so the same road still reads as one incline.
+const shortRest = analyzeRoad(plateau, plateau.map(s =>
+    (s.d <= 1000 ? s.d * 0.06 : s.d <= 1200 ? 60 : 60 + (s.d - 1200) * 0.06))).elev;
+const oneIncline = longestInclines(plateau, shortRest, 800);
+assert(oneIncline.length === 1 && oneIncline[0].span > 2500,
+    `a 200 m rest stays one incline (${oneIncline.map(i => i.span.toFixed(0) + ' m').join(', ') || 'none'})`);
+
+// A summit is not a stall. On a run holding a whole hill, every metre of the
+// climb "fails to advance" the descent (and vice versa), so applying the
+// dead-run cap before the run is known to head one way deleted the descent
+// outright — Brighton Road, Pittsburgh: a clean 822 m at 5% that vanished.
+const overHill = resample([{ lat: 35, lon: -82.3 }, { lat: 35.027, lon: -82.3 }]); // ~3 km
+const overHillElev = analyzeRoad(overHill, overHill.map(s => 100 - Math.abs(s.d - 1500) * 0.05)).elev;
+const hillSides = longestInclines(overHill, overHillElev, 800);
+assert(hillSides.length === 2 && hillSides.every(i => i.span > 1400),
+    `hill reports both sides (${hillSides.map(i => i.span.toFixed(0) + ' m').join(', ') || 'none'})`);
+assert(hillSides.every(i => Math.abs(i.grade - 0.05) < 0.005),
+    `each side of the hill reads 5% (${hillSides.map(i => (i.grade * 100).toFixed(1) + '%').join(', ')})`);
+
 // Two inclines meeting at a valley bottom must split into two runs, not merge
 // into one incoherent ~0 % run (the Bolin Creek case).
 const vRoad = resample([{ lat: 35, lon: -82.4 }, { lat: 35.027, lon: -82.4 }]); // ~3 km
