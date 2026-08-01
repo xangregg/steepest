@@ -23,7 +23,7 @@ import { parseLatLon, geocode, fetchRoads, prepareRoads, bridgeIndex, markUnderp
 import { elevatePoints } from './elevation.js';
 import { resample, analyzeRoad, segmentSustained, sustainedStretches, hardestClimbs, grindMask, longestInclinePaths, SAMPLE_STEP, STRETCH_COL_FRAC } from './metrics.js';
 import { initMap, drawRoads, renderList, setGrindStyle, setRampStyle, setWidthStyle, shortLabel, GRADE_MIN } from './render.js';
-import { searchKey, cacheGet, cachePut, cacheStats, cacheClear } from './cache.js';
+import { searchKey, cacheGet, cachePut, cacheStats, cacheClear, VERSION_TAG } from './cache.js';
 import { buildCsv, csvFilename } from './csv.js';
 
 const byId = id => document.getElementById(id);
@@ -441,6 +441,9 @@ function render() {
         b.addEventListener('click', () => void run(true));
         byId('status').append(b);
     }
+    else if (state.staleFixture) {
+        status(`Done. ${doneMsg} Fixture captured by pipeline v${state.staleFixture} — the app is on v${VERSION_TAG}, so its elevations may be stale.`);
+    }
     else {
         status(`Done. ${doneMsg}`);
     }
@@ -609,7 +612,14 @@ if (params.get('fixture')) {
     fetch(`test/fixtures/${params.get('fixture')}.json`)
         .then(r => r.ok ? r.json() : Promise.reject(new Error(`fixture HTTP ${r.status}`)))
         .then(f => {
-            state = { roads: f.roads, center: f.center, radiusM: f.radiusM, label: f.center.label, cachedAt: null };
+            state = {
+                roads: f.roads, center: f.center, radiusM: f.radiusM, label: f.center.label, cachedAt: null,
+                // A fixture stores the same processed-road shape the cache
+                // versions, but is read straight off disk, so nothing else
+                // would notice it going stale. Say so rather than fail: a
+                // stale fixture still renders, and still beats no fixture.
+                staleFixture: f.version === VERSION_TAG ? null : (f.version ?? 'unknown'),
+            };
             if (['climb', 'sustained', 'incline'].includes(params.get('mode')))
                 byId('rankmode').value = params.get('mode');
             if (['dual', 'single'].includes(params.get('color')))

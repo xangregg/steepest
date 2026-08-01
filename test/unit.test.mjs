@@ -7,6 +7,7 @@
 
 import { readFileSync } from 'node:fs';
 import { parseLatLon, prepareRoads, bridgeIndex, markUnderpasses } from '../roads.js';
+import { VERSION_TAG } from '../cache.js';
 import { assert } from './assert.mjs';
 
 // Stitching bearing gate: same-name ways merge straight through a join but
@@ -399,11 +400,42 @@ const ownDeck = prepareRoads([eastWest(24, 35, { bridge: 'yes' })])[0];
 assert(resample(ownDeck.pts).every(s => s.b),
     'a road on its own bridge keeps every sample flagged either way');
 
+// Fixtures store the same processed-road shape the IndexedDB cache versions,
+// but are read straight off disk, so nothing else would notice one going stale.
+const fixtures = Object.fromEntries(['brevard', 'underpass'].map(n =>
+    [n, JSON.parse(readFileSync(new URL(`./fixtures/${n}.json`, import.meta.url), 'utf8'))]));
+for (const [n, f] of Object.entries(fixtures)) {
+    assert(f.version === VERSION_TAG,
+        `${n} fixture matches pipeline v${VERSION_TAG}` +
+        (f.version === VERSION_TAG ? '' : ` — captured at v${f.version ?? 'none'}, recapture it`));
+    // Rebuild the underpass flags through the live code over the fixture's own
+    // geometry and decks. Comparing stored flags against stored flags would only
+    // restate what was captured; this fails if markUnderpasses itself regresses.
+    const decks = bridgeIndex(f.decks);
+    let checked = 0, flagged = 0, mismatch = null;
+    for (const r of f.roads) {
+        const rebuilt = markUnderpasses(r.pts, resample(r.pts), decks);
+        if (rebuilt.length !== r.samples.length)
+            continue;   // 6-decimal rounding can shift a sample count by one
+        checked++;
+        for (let i = 0; i < rebuilt.length; i++) {
+            if (!!rebuilt[i].b !== !!r.samples[i].b)
+                mismatch ??= `${r.name} sample ${i} (fresh ${!!rebuilt[i].b}, stored ${!!r.samples[i].b})`;
+            if (rebuilt[i].b && !r.pts.some(p => p.b))
+                flagged++;
+        }
+    }
+    assert(checked > f.roads.length - 3 && !mismatch,
+        `${n}: ${checked} roads re-flagged by a fresh markUnderpasses run, all matching${mismatch ? ` — except ${mismatch}` : ''}`);
+    assert(n === 'brevard' ? flagged === 0 : flagged > 0,
+        `${n}: ${flagged} underpass flags rebuilt from source (${n === 'brevard' ? 'none expected' : 'the interchange'})`);
+}
+
 // The real case, from the committed fixture (processed offline, no network):
 // Raleigh Rd under Fordham Blvd. Untreated, the terrarium tiles read 88.7 m ->
 // 94.3 m -> 90.2 m across the interchange — a ~22 % segment grade on a street
 // that is nearly flat there.
-const fixture = JSON.parse(readFileSync(new URL('./fixtures/underpass.json', import.meta.url), 'utf8'));
+const fixture = fixtures.underpass;
 const raleigh = fixture.roads
     .filter(r => r.name === 'Raleigh Road')
     .find(r => r.samples.some(s => Math.hypot(s.lat - 35.90879, s.lon + 79.02690) < 3e-4));

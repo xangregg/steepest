@@ -246,7 +246,11 @@ same grade in every town.
   real search into `test/fixtures/<name>.json` (e.g. the committed
   `brevard.json`, and `underpass.json` for the Fordham Blvd/Raleigh Rd
   interchange in Chapel Hill), which the app renders offline via
-  `#fixture=<name>` — for checking the UI without Overpass.
+  `#fixture=<name>` — for checking the UI without Overpass. A fixture holds the
+  same processed-road shape the cache versions, so it carries that version tag
+  (the app says so when it doesn't match, and `npm test` fails) plus the bridge
+  decks it was captured against, so the tests can re-derive its underpass flags
+  through the live code rather than trust the stored ones.
 
 ## Running locally
 

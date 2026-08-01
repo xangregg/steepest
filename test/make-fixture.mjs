@@ -7,7 +7,8 @@ import { PNG } from 'pngjs';
 import { writeFileSync, mkdirSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import { parseLatLon, geocode, fetchRoads, prepareRoads, bridgeIndex, markUnderpasses } from '../roads.js';
+import { parseLatLon, geocode, fetchRoads, prepareRoads, bridgeIndex, bridgeWays, markUnderpasses } from '../roads.js';
+import { VERSION_TAG } from '../cache.js';
 import { elevatePoints } from '../elevation.js';
 import { resample, analyzeRoad } from '../metrics.js';
 
@@ -49,8 +50,18 @@ const r6 = v => Math.round(v * 1e6) / 1e6;
 const r2 = v => Math.round(v * 100) / 100;
 const pt = p => (p.b ? { lat: r6(p.lat), lon: r6(p.lon), b: true } : { lat: r6(p.lat), lon: r6(p.lon) });
 const fixture = {
+    // Stamped so a fixture captured by an older pipeline can be spotted rather
+    // than rendering silently stale (the app says so; unit.test.mjs fails).
+    version: VERSION_TAG,
     center: { lat: center.lat, lon: center.lon, label: center.label },
     radiusM,
+    // The bridge decks the underpass pass was run against, so a test can rebuild
+    // the flags through the live code instead of trusting the captured ones.
+    decks: bridgeWays(elements).map(el => ({
+        type: 'way', id: el.id,
+        tags: el.tags.layer != null ? { bridge: el.tags.bridge, layer: el.tags.layer } : { bridge: el.tags.bridge },
+        geometry: el.geometry.map(g => ({ lat: r6(g.lat), lon: r6(g.lon) })),
+    })),
     roads: roads.map(({ id, name, unnamed, pts, samples, elev, length, eMin, eMax }) => ({
         id, name, unnamed,
         pts: pts.map(pt),
@@ -63,4 +74,4 @@ const dir = join(dirname(fileURLToPath(import.meta.url)), 'fixtures');
 mkdirSync(dir, { recursive: true });
 const path = join(dir, `${name}.json`);
 writeFileSync(path, JSON.stringify(fixture));
-console.log(`wrote ${fixture.roads.length} roads to ${path}`);
+console.log(`wrote ${fixture.roads.length} roads and ${fixture.decks.length} bridge decks to ${path}`);
