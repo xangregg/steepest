@@ -212,6 +212,13 @@ same grade in every town.
   without changing which roads make the list. Clicking a segment reports its own
   grade and the sustained grade at the chosen length, showing how far it falls
   short of ranking.
+- **A clicked segment's grade is signed against the run it sits in.** A climb or
+  a long incline may hold short drops (~12 % of the segments inside Brevard's
+  long inclines run the other way, one of them at 15 %), and the ribbon colors
+  those by steepness alone, so the popup prints them negative rather than let a
+  descent read as the steepest climbing metre on the road. The sign is relative
+  to the climb or incline named beneath it, never to the road's stored
+  direction; a segment with no such run around it stays unsigned.
 - **Sidebar & sharing.** The bar chart shares the color gradient and doubles as
   the ranked list; hover to highlight on the map, click to zoom. A "Download CSV"
   button exports the current ranking (begin/end lat/lon/elevation per stretch,

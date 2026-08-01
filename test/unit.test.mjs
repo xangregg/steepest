@@ -126,7 +126,7 @@ assert(Math.abs(ends[0] - 34.9985) < 1e-6 && Math.abs(ends[1] - 35.002) < 1e-6,
     `${ends[0].toFixed(4)} -> ${ends[1].toFixed(4)})`);
 
 import { resample, analyzeRoad, segmentSustained, sustainedGrade, bestSustainedWindow, sustainedStretches, hardestClimb, hardestClimbs, grindMask, longestIncline, longestInclines, longestInclinePaths, haversine, SAMPLE_STEP } from '../metrics.js';
-import { abbrevName, shortLabel } from '../render.js';
+import { abbrevName, shortLabel, popupHtml } from '../render.js';
 import { buildCsv, csvFilename } from '../csv.js';
 
 // Place-label shortening for the list sub-line: drop county-equivalent parts,
@@ -148,6 +148,34 @@ assert(abbrevName('Martin Luther King Jr Boulevard') === 'Martin Luther King Jr 
 assert(abbrevName('Streetman Road') === 'Streetman Rd', 'abbrev keeps Streetman, shortens Road');
 assert(abbrevName('Roadside Lane') === 'Roadside Ln', 'abbrev keeps Roadside, shortens Lane');
 assert(abbrevName('Franklin Street') === 'Franklin St', 'abbrev St');
+
+// Popup segment grade: signed against the container it sits in, so a segment
+// that drops inside a climb doesn't read like one that rises. The reference is
+// the container's direction, NOT the road's stored point order — the same
+// physical road stored either way must report the same sign.
+const dipRoad = dir => {
+    const elev = [100, 103, 102, 106, 109];
+    const samples = [0, 25, 50, 75, 100].map(d => ({ lat: 35, lon: -82, d }));
+    const e = dir > 0 ? elev : [...elev].reverse();
+    return {
+        name: 'Dip Road', samples, elev: e,
+        climbs: [{ i: 0, j: 4, gain: 9, span: 100, grade: 0.09 }],
+    };
+};
+const pctOf = html => html.match(/segment<\/span><b>(-?[\d.]+%)/)?.[1];
+// Forward: segment 1 falls 1 m over 25 m inside a climb that rises.
+assert(pctOf(popupHtml(dipRoad(1), null, 250, 1, 'climb')) === '-4.0%',
+    `popup: a reversing segment reads negative (${pctOf(popupHtml(dipRoad(1), null, 250, 1, 'climb'))})`);
+assert(pctOf(popupHtml(dipRoad(1), null, 250, 0, 'climb')) === '12.0%',
+    'popup: a segment with the climb keeps its bare magnitude');
+// Stored backwards, the same dip is segment 2 and rises in point order; the
+// climb now falls in point order, so the sign must still be negative.
+assert(pctOf(popupHtml(dipRoad(-1), null, 250, 2, 'climb')) === '-4.0%',
+    `popup: the sign follows the climb, not the stored order (${pctOf(popupHtml(dipRoad(-1), null, 250, 2, 'climb'))})`);
+// No directed container (an unranked road in sustained mode): no sign to give.
+const plain = { name: 'Plain St', samples: dipRoad(1).samples, elev: dipRoad(1).elev, segs: [0.12, 0.04, 0.16, 0.12] };
+assert(pctOf(popupHtml(plain, null, 250, 1, 'sustained')) === '4.0%',
+    `popup: an unsigned segment keeps its magnitude (${pctOf(popupHtml(plain, null, 250, 1, 'sustained'))})`);
 
 // CSV export (csv.js): per-mode columns, endpoints, escaping, filenames.
 const csvRoad = (() => {
@@ -575,6 +603,22 @@ for (const side of severed)
 assert(crossing.span - severedBest > 400,
     `fixture: joining the halves lengthens that incline (${Math.round(crossing.span)} m joined vs ` +
     `${severedBest ? Math.round(severedBest) + ' m' : 'nothing over the 800 m bar'} severed)`);
+
+// The real case for signed segment grades, from the Brevard fixture: White
+// Squirrel Lane's 919 m long incline averages ~10 % but its last segment drops
+// 15.4 %. Printed as a magnitude that reads as the steepest climbing segment on
+// the road, directly under a row calling the whole run an incline.
+const squirrel = fixtures.brevard.roads.find(r => r.name === 'White Squirrel Lane');
+const squirrelInc = longestInclines(squirrel.samples, squirrel.elev, 800)[0];
+const inclineRoad = {
+    ...squirrel,
+    rankedSpans: [{ i: squirrelInc.i, j: squirrelInc.j, rank: 1, gain: squirrelInc.gain, span: squirrelInc.span, grade: squirrelInc.grade }],
+};
+const segPct = k => popupHtml(inclineRoad, null, 250, k, 'incline').match(/segment<\/span><b>(-?[\d.]+%)/)?.[1];
+assert(segPct(squirrelInc.j - 1) === '-15.4%',
+    `fixture: the segment falling inside White Squirrel Ln's incline reads negative (${segPct(squirrelInc.j - 1)})`);
+assert(segPct(squirrelInc.i + 1)?.startsWith('-') === false,
+    `fixture: a segment climbing with that incline stays unsigned (${segPct(squirrelInc.i + 1)})`);
 
 // DEM seam despiking: a real Fonllech Hir profile (Harlech) crosses a ~92 m
 // step artifact in the terrarium tiles, so a weaving road reads ~243 m, dips

@@ -197,7 +197,10 @@ export function initMap(el, mode) {
     return { map, setMode: setBase, updateLegend };
 }
 
-const fmtPct = g => `${(g * 100).toFixed(1)}%`;
+// Grades print as magnitudes except where a sign carries meaning (a segment
+// running against the climb it sits in). Anything that rounds to zero drops the
+// sign, so a millimetre of DEM noise can't print as "-0.0%".
+const fmtPct = g => `${(Math.abs(g) < 0.0005 ? 0 : g * 100).toFixed(1)}%`;
 const fmtLen = m => m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${Math.round(m)} m`;
 // Compact rise/run form (↑43m/299m ≈ 14.3%): wraps less than "↑43 m @ 14.3%
 // over 299 m" in the narrow list, and with both lengths in meters the ratio
@@ -282,14 +285,16 @@ function peakSeg(road, i, j) {
 // click, or the extent's peak for a list-opened popup (null only if neither is
 // available). stretchValue: the ranked stretch's grade, for a sustained
 // list-open with no segment. rankMode: which container to show.
-function popupHtml(road, stretchValue, windowM, segK, rankMode) {
+//
+// The segment's grade is signed against the container beneath it: a climb or
+// long incline may hold short reversals (~12 % of the segments inside Brevard's
+// long inclines run the other way, one of them at 15 %), and printing those as
+// bare magnitudes reads them as climbing. The reference is the container's own
+// direction, never the road's stored point order, which is whatever OSM and
+// stitching left it as. Everything else stays a magnitude: a climb is a climb
+// however you drive it.
+export function popupHtml(road, stretchValue, windowM, segK, rankMode) {
     const name = `<div class="popup-name">${esc(road.name)}</div>`;
-    let segRow = '';
-    if (segK != null) {
-        const s0 = road.samples[segK], s1 = road.samples[segK + 1];
-        const g = Math.abs(road.elev[segK + 1] - road.elev[segK]) / (s1.d - s0.d);
-        segRow = `<div class="popup-row popup-active"><span>This ${(s1.d - s0.d).toFixed(1)} m segment</span><b>${fmtPct(g)}</b></div>`;
-    }
     // The ranked container this spot belongs to, and its rank when known.
     // rankedSpans covers the whole field (not just the listed top-N), so the
     // rank shows even for a stretch/climb/incline that didn't make the list.
@@ -297,17 +302,26 @@ function popupHtml(road, stretchValue, windowM, segK, rankMode) {
         ? road.rankedSpans?.find(sp => segK >= sp.i && segK < sp.j)
         : road.rankedSpans?.[0];
     const rankTag = rk ? ` <span class="popup-rank">#${rk.rank}</span>` : '';
+    // +1 when the container rises with the stored order, -1 when it falls, null
+    // when nothing directed contains the segment (then the segment keeps its
+    // magnitude, as there is no sequence for a sign to be relative to).
+    const runDir = (i, j) => Math.sign(road.elev[j] - road.elev[i]) || null;
+    let dir = null;
     let containerRow = '';
     if (rankMode === 'climb') {
         const climbs = road.climbs ?? [];
         const c = (segK != null ? climbs.find(cl => segK >= cl.i && segK < cl.j) : null) ?? climbs[0];
-        if (c)
+        if (c) {
             containerRow = `<div class="popup-row"><span>This climb</span><b>${fmtClimb(c)}${rankTag}</b></div>`;
+            dir = runDir(c.i, c.j);
+        }
     }
     else if (rankMode === 'incline') {
-        if (rk)
+        if (rk) {
             // The whole incline (across every road it spans), carried on the span.
             containerRow = `<div class="popup-row"><span>Long incline</span><b>${fmtClimb({ gain: rk.gain, span: rk.span, grade: rk.grade })}${rankTag}</b></div>`;
+            dir = runDir(rk.i, rk.j);
+        }
         else if (segK != null && road.grind?.[segK]) {
             // A long incline that didn't rank: describe its local run, no rank.
             let a = segK, b = segK;
@@ -318,6 +332,7 @@ function popupHtml(road, stretchValue, windowM, segK, rankMode) {
             const span = road.samples[b + 1].d - road.samples[a].d;
             const gain = Math.abs(road.elev[b + 1] - road.elev[a]);
             containerRow = `<div class="popup-row"><span>Long incline</span><b>${fmtClimb({ gain, span, grade: gain / span })}</b></div>`;
+            dir = runDir(a, b + 1);
         }
     }
     else {
@@ -331,6 +346,19 @@ function popupHtml(road, stretchValue, windowM, segK, rankMode) {
                 : `<div class="popup-row"><span>Sustained ${windowM} m here</span><b>road too short</b></div>`;
         else
             containerRow = `<div class="popup-row"><span>Sustained ${road.window ?? windowM} m</span><b>${fmtPct(stretchValue)}${rankTag}</b></div>`;
+        // The ranked stretch is the directed sequence here — not the window in
+        // the row, which is the steepest window *containing* this segment and so
+        // has no start the segment can be oriented against. An unranked road has
+        // neither, and its segment stays unsigned.
+        if (rk)
+            dir = runDir(rk.i, rk.j);
+    }
+    let segRow = '';
+    if (segK != null) {
+        const s0 = road.samples[segK], s1 = road.samples[segK + 1];
+        const rise = road.elev[segK + 1] - road.elev[segK];
+        const g = (dir ? rise * dir : Math.abs(rise)) / (s1.d - s0.d);
+        segRow = `<div class="popup-row popup-active"><span>This ${(s1.d - s0.d).toFixed(1)} m segment</span><b>${fmtPct(g)}</b></div>`;
     }
     return `<div class="popup">${name}${segRow}${containerRow}</div>`;
 }
