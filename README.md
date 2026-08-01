@@ -78,6 +78,13 @@ tracks, and paths).
   streets that share such a name don't chain into one fictional road. (TIGER is
   the US Census Bureau's road data, bulk-imported into OSM in 2007 with
   often-mangled names.)
+- **Roundabouts.** A circle is its own OSM way, so the road through it is
+  severed into legs that share no endpoint. The circle is a junction, not a road
+  to rank, so it's dropped from the list — but its pavement is used to rejoin
+  same-name legs (under the same ≤ 70° gate), and the arc actually driven counts
+  toward the joined road's distance. Without this, Mount Carmel Church Road in
+  Chapel Hill ranks as two roads and its 1.3 km descent through the circle is
+  clipped to the 800 m south of it.
 - **Bridges & tunnels.** Their spans are kept for continuity, but their
   elevations are replaced by a straight-line deck between the solid ground at
   each end, so the elevation model reports the gorge under a bridge, not the
@@ -217,7 +224,10 @@ same grade in every town.
   Overpass fetch with mirror retries, and way stitching: same-name ways merge
   where travel continues straight through the join (bearing gate), TIGER
   `name_base`/`name_type` tags must agree, and three-end junctions (a two-way
-  road becoming a divided road) merge their straightest pair. Bridge/tunnel
+  road becoming a divided road) merge their straightest pair. A second pass
+  rejoins legs left on opposite sides of a roundabout through the circle's own
+  pavement, taking the longest gate-passing pair so a divided approach's
+  carriageway stubs can't hijack the join. Bridge/tunnel
   points are flagged for elevation correction, as are the samples of a road
   found (by `bridgeIndex`/`markUnderpasses`) to cross under someone else's
   bridge.
@@ -244,8 +254,9 @@ same grade in every town.
   exercising every rendering rule; `test/cache.html` and `test/cache-unit.html`
   cover the IndexedDB cache in a real browser. `test/make-fixture.mjs` captures a
   real search into `test/fixtures/<name>.json` (e.g. the committed
-  `brevard.json`, and `underpass.json` for the Fordham Blvd/Raleigh Rd
-  interchange in Chapel Hill), which the app renders offline via
+  `brevard.json`, `underpass.json` for the Fordham Blvd/Raleigh Rd interchange
+  in Chapel Hill, and `roundabout.json` for Mount Carmel Church Rd at its
+  Bennett Rd circle), which the app renders offline via
   `#fixture=<name>` — for checking the UI without Overpass. A fixture holds the
   same processed-road shape the cache versions, so it carries that version tag
   (the app says so when it doesn't match, and `npm test` fails) plus the bridge

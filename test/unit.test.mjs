@@ -45,7 +45,87 @@ const bore = prepareRoads([
     tunnelWay,
     way(7, 'Bore St', [[35.002, -77], [35.003, -77]]),
 ]);
-import { resample, analyzeRoad, segmentSustained, sustainedGrade, bestSustainedWindow, sustainedStretches, hardestClimb, hardestClimbs, grindMask, longestIncline, longestInclines, longestInclinePaths, SAMPLE_STEP } from '../metrics.js';
+
+// --- Roundabouts -----------------------------------------------------------
+// A roundabout is a junction, not a road: OSM gives the circle its own way, so
+// the road through it is severed into legs meeting the circle at different
+// nodes (no shared node to stitch at). The legs must rejoin through the
+// circle's own pavement, and the circle must not be ranked as a road.
+const RING_R = 0.00018;                     // ~20 m of latitude
+// deg is a compass bearing from the circle's center.
+const ringNode = (clat, clon, deg) => [
+    clat + RING_R * Math.cos(deg * Math.PI / 180),
+    clon + (RING_R / Math.cos(clat * Math.PI / 180)) * Math.sin(deg * Math.PI / 180),
+];
+const roundabout = (id, clat, clon) => {
+    const nodes = [];
+    for (let deg = 0; deg < 360; deg += 30)
+        nodes.push(ringNode(clat, clon, deg));
+    nodes.push(nodes[0]);                   // closed ring
+    return { ...way(id, null, nodes), tags: { highway: 'residential', junction: 'roundabout' } };
+};
+const legLen = r => {
+    let m = 0;
+    for (let i = 1; i < r.pts.length; i++)
+        m += haversine(r.pts[i - 1], r.pts[i]);
+    return m;
+};
+
+// Straight through: legs at 180° (south) and 30° (north-north-east) rejoin, and
+// the joined road carries the SHORTER way round (the four nodes at 150…60),
+// not the six the long way round.
+const through = prepareRoads([
+    roundabout(100, 35, -75),
+    way(101, 'Ring Road', [[34.999, -75], ringNode(35, -75, 180)]),
+    way(102, 'Ring Road', [ringNode(35, -75, 30), [35.001, -74.9995]]),
+]);
+assert(through.length === 1 && through[0].name === 'Ring Road',
+    `roundabout: severed legs rejoin as one road (${through.length} entries: ${through.map(r => r.name)})`);
+assert(!through.some(r => r.id === 100), 'roundabout: the circle itself is not ranked as a road');
+const arcNodes = through[0].pts.filter(p => Math.abs(haversine(p, { lat: 35, lon: -75 }) - 20) < 1);
+assert(arcNodes.length === 6, `roundabout: the joined road runs over the circle (${arcNodes.length} ring nodes: 2 legs + 4 between)`);
+// The circle's pavement counts as road: the join must add the five 30° chords
+// from 180° round to 30°, so distances (and so grades) stay honest.
+const asPts = coords => ({ pts: coords.map(([lat, lon]) => ({ lat, lon })) });
+const legsOnly = legLen(asPts([[34.999, -75], ringNode(35, -75, 180)])) +
+    legLen(asPts([ringNode(35, -75, 30), [35.001, -74.9995]]));
+const arcM = 5 * 2 * RING_R * 111320 * Math.sin(Math.PI / 12);
+assert(Math.abs(legLen(through[0]) - legsOnly - arcM) < 2,
+    `roundabout: joined length is the legs plus the arc (${legLen(through[0]).toFixed(0)} m = ${legsOnly.toFixed(0)} + ${arcM.toFixed(0)})`);
+
+// A leg turning off the circle is a corner, not a continuation: same-name legs
+// 90° apart must stay separate roads, exactly as they would at a plain junction.
+const corner = prepareRoads([
+    roundabout(200, 35, -74),
+    way(201, 'Bend Street', [[34.999, -74], ringNode(35, -74, 180)]),
+    way(202, 'Bend Street', [ringNode(35, -74, 90), [35, -73.999]]),
+]);
+assert(corner.length === 2, `roundabout: a 90° leg does not stitch through (${corner.length} entries)`);
+
+// Divided at the circle (Mount Carmel Church Rd, Chapel Hill): each side offers
+// a long through chain AND a short one-way carriageway stub. The approaches
+// bend as they reach the circle, so a stub — short, and square to the circle —
+// reads straighter (~14°) than the two through chains read to each other
+// (~45°). Pairing by straightness alone therefore hooks a stub to a through
+// chain and leaves the road in two mismatched halves; the longest pair must win
+// so the through chains join and the stubs are left to each other.
+const split = [34.9997, -73], joinN = [35.0003, -73];
+const dividedRing = prepareRoads([
+    roundabout(300, 35, -73),
+    way(301, 'Divided Road', [[34.9985, -73.0008], split]),              // south approach
+    way(302, 'Divided Road', [split, ringNode(35, -73, 210)]),           // south carriageway
+    way(303, 'Divided Road', [ringNode(35, -73, 150), split]),           // south carriageway back
+    way(304, 'Divided Road', [ringNode(35, -73, 30), joinN]),            // north carriageway
+    way(305, 'Divided Road', [joinN, ringNode(35, -73, 330)]),           // north carriageway back
+    way(306, 'Divided Road', [joinN, [35.002, -73.0008]]),               // north approach
+]);
+const longest = dividedRing.slice().sort((a, b) => legLen(b) - legLen(a))[0];
+const ends = [longest.pts[0].lat, longest.pts[longest.pts.length - 1].lat].sort();
+assert(Math.abs(ends[0] - 34.9985) < 1e-6 && Math.abs(ends[1] - 35.002) < 1e-6,
+    `roundabout: the through carriageways join across the divided approach (${legLen(longest).toFixed(0)} m, ` +
+    `${ends[0].toFixed(4)} -> ${ends[1].toFixed(4)})`);
+
+import { resample, analyzeRoad, segmentSustained, sustainedGrade, bestSustainedWindow, sustainedStretches, hardestClimb, hardestClimbs, grindMask, longestIncline, longestInclines, longestInclinePaths, haversine, SAMPLE_STEP } from '../metrics.js';
 import { abbrevName, shortLabel } from '../render.js';
 import { buildCsv, csvFilename } from '../csv.js';
 
@@ -402,7 +482,7 @@ assert(resample(ownDeck.pts).every(s => s.b),
 
 // Fixtures store the same processed-road shape the IndexedDB cache versions,
 // but are read straight off disk, so nothing else would notice one going stale.
-const fixtures = Object.fromEntries(['brevard', 'underpass'].map(n =>
+const fixtures = Object.fromEntries(['brevard', 'underpass', 'roundabout'].map(n =>
     [n, JSON.parse(readFileSync(new URL(`./fixtures/${n}.json`, import.meta.url), 'utf8'))]));
 for (const [n, f] of Object.entries(fixtures)) {
     assert(f.version === VERSION_TAG,
@@ -428,7 +508,7 @@ for (const [n, f] of Object.entries(fixtures)) {
     assert(checked > f.roads.length - 3 && !mismatch,
         `${n}: ${checked} roads re-flagged by a fresh markUnderpasses run, all matching${mismatch ? ` — except ${mismatch}` : ''}`);
     assert(n === 'brevard' ? flagged === 0 : flagged > 0,
-        `${n}: ${flagged} underpass flags rebuilt from source (${n === 'brevard' ? 'none expected' : 'the interchange'})`);
+        `${n}: ${flagged} underpass flags rebuilt from source (${n === 'brevard' ? 'none expected' : 'roads under decks'})`);
 }
 
 // The real case, from the committed fixture (processed offline, no network):
@@ -447,6 +527,54 @@ const underGrades = nearCross.slice(0, -1)
     .map(x => Math.abs(raleigh.elev[x.i + 1] - raleigh.elev[x.i]) / (raleigh.samples[x.i + 1].d - x.s.d));
 assert(Math.max(...underGrades) < 0.04,
     `fixture: no fake pitch left under the interchange (${(Math.max(...underGrades) * 100).toFixed(1)}%)`);
+
+// The real roundabout case, from its own fixture: Mount Carmel Church Rd at
+// Bennett Rd, Chapel Hill. OSM severs the road at the circle — the two halves
+// meet it at nodes ~36 m apart, sharing none — so it used to rank as a 3.9 km
+// piece plus a 0.6 km piece, and the descent through the circle was clipped to
+// the 800 m south of it. Stitched through, the same descent reads 1.3 km.
+const rbFixture = fixtures.roundabout;
+const CIRCLE = { lat: 35.886650, lon: -79.057230 };
+const carmel = rbFixture.roads.filter(r => r.name === 'Mount Carmel Church Road');
+const carmelThrough = carmel.filter(r => r.length > 1000);
+assert(carmelThrough.length === 1 && carmelThrough[0].length > 4000,
+    `fixture: Mount Carmel Church Rd is one road through the roundabout ` +
+    `(${carmel.map(r => (r.length / 1000).toFixed(2) + ' km').join(' + ')})`);
+// The circle is a junction, so nothing in the fixture stands on it as a road:
+// the only pavement there belongs to the roads stitched through it.
+const onCircle = rbFixture.roads.filter(r =>
+    r.samples.every(s => haversine(s, CIRCLE) < 40) && haversine(r.samples[0], r.samples[r.samples.length - 1]) < 10);
+assert(onCircle.length === 0, `fixture: the circle is not ranked as a road (${onCircle.map(r => r.name)})`);
+
+// The incline that used to be cut in half: it runs through the circle, and
+// neither severed side reaches nearly as far on its own — cut at the circle,
+// this descent is ~800 m of the road's south piece (what the app used to
+// report) and nothing at all on the north piece.
+const carmelSamples = carmelThrough[0].samples;
+const atCircle = carmelSamples.map((s, i) => i).filter(i => haversine(carmelSamples[i], CIRCLE) < 40);
+const crossing = longestInclines(carmelSamples, carmelThrough[0].elev, 800)
+    .find(r => atCircle.some(k => k > r.i && k < r.j));
+assert(crossing && crossing.span > 1250,
+    `fixture: the incline through the roundabout is reported whole (${crossing ? Math.round(crossing.span) + ' m' : 'not found'})`);
+const cutLo = atCircle[0], cutHi = atCircle[atCircle.length - 1] + 1;
+const severed = [
+    { offset: 0, samples: carmelSamples.slice(0, cutLo), elev: carmelThrough[0].elev.slice(0, cutLo) },
+    {
+        offset: cutHi,
+        samples: carmelSamples.slice(cutHi).map(s => ({ ...s, d: s.d - carmelSamples[cutHi].d })),
+        elev: carmelThrough[0].elev.slice(cutHi),
+    },
+];
+let severedBest = 0;
+for (const side of severed)
+    for (const run of longestInclines(side.samples, side.elev, 800))
+        // Only runs over the same stretch of road count — the road's other
+        // incline, well south of the circle, was never affected by the split.
+        if (run.i + side.offset < crossing.j && run.j + side.offset > crossing.i)
+            severedBest = Math.max(severedBest, run.span);
+assert(crossing.span - severedBest > 400,
+    `fixture: joining the halves lengthens that incline (${Math.round(crossing.span)} m joined vs ` +
+    `${severedBest ? Math.round(severedBest) + ' m' : 'nothing over the 800 m bar'} severed)`);
 
 // DEM seam despiking: a real Fonllech Hir profile (Harlech) crosses a ~92 m
 // step artifact in the terrarium tiles, so a weaving road reads ~243 m, dips

@@ -20,6 +20,14 @@ const USER_AGENT = 'steepest-roads/1.0 (+https://github.com/xangregg/steepest)';
 const HIGHWAY_RE = 'residential|unclassified|living_street|tertiary|secondary|primary|trunk';
 const RANKED_RE = new RegExp(`^(${HIGHWAY_RE})$`);
 
+// A roundabout is a junction, not a road: OSM gives the circle its own way, so
+// every road through it is severed into stubs meeting the circle at different
+// nodes. Such ways are kept out of the ranking and used only to stitch the
+// severed halves back together (roundaboutNodes / the roundabout pass in
+// stitchGroup). junction=circular covers the larger non-priority traffic
+// circles, which split a road exactly the same way.
+const ROUNDABOUT_RE = /^(roundabout|circular)$/;
+
 // Decks that are never ranked but still have to be fetched: a ranked road
 // passing under one reads the deck's elevation instead of its own (see
 // markUnderpasses). Motorways and their ramps are the common overpass, and
@@ -137,15 +145,19 @@ out geom;`;
 }
 
 // Raw Overpass elements -> [{id, name, pts:[{lat,lon}]}], with same-name ways
-// stitched end-to-end. Bridge/tunnel points are flagged (b): the elevation
-// model shows the terrain under/over the span, not the roadway, so their
+// stitched end-to-end (and through roundabouts, which are themselves dropped —
+// a junction is not a road to rank). Bridge/tunnel points are flagged (b): the
+// elevation model shows the terrain under/over the span, not the roadway, so their
 // elevations get interpolated later (metrics.js) — but the way itself is kept
 // so a creek crossing doesn't sever the road and truncate its climbs.
 export function prepareRoads(elements) {
+    const rings = roundaboutNodes(elements);
     const ways = elements
         // The response also carries unranked decks (motorway, ramp, railway)
-        // fetched only so underpasses can be found — they are not roads to rank.
-        .filter(el => el.type === 'way' && el.geometry?.length >= 2 && RANKED_RE.test(el.tags?.highway ?? ''))
+        // fetched only so underpasses can be found — they are not roads to rank,
+        // and neither are roundabout circles.
+        .filter(el => el.type === 'way' && el.geometry?.length >= 2 && RANKED_RE.test(el.tags?.highway ?? '')
+            && !ROUNDABOUT_RE.test(el.tags?.junction ?? ''))
         .map(el => {
             const b = !!(el.tags?.bridge || el.tags?.tunnel);
             return {
@@ -172,11 +184,97 @@ export function prepareRoads(elements) {
         byName.get(w.name).push(w);
     }
     for (const group of byName.values())
-        out.push(...stitchGroup(group));
+        out.push(...stitchGroup(group, rings));
     return out;
 }
 
 const ptKey = p => `${p.lat.toFixed(6)},${p.lon.toFixed(6)}`;
+
+// --- Roundabouts -----------------------------------------------------------
+
+// Chain roundabout ways that share an endpoint: a big circle is often mapped as
+// several arcs, and the pavement between two legs may span more than one of
+// them. No bearing gate — anything tagged as one circle belongs to it.
+function chainArcs(arcs) {
+    const closed = a => ptKey(a[0]) === ptKey(a[a.length - 1]);
+    let merged = true;
+    while (merged) {
+        merged = false;
+        for (let i = 0; i < arcs.length && !merged; i++) {
+            const a = arcs[i];
+            if (closed(a))
+                continue;
+            for (let j = i + 1; j < arcs.length && !merged; j++) {
+                const b = arcs[j];
+                if (closed(b))
+                    continue;
+                const [aHead, aTail] = [ptKey(a[0]), ptKey(a[a.length - 1])];
+                const [bHead, bTail] = [ptKey(b[0]), ptKey(b[b.length - 1])];
+                let joined = null;
+                if (aTail === bHead)
+                    joined = [...a, ...b.slice(1)];
+                else if (aTail === bTail)
+                    joined = [...a, ...[...b].reverse().slice(1)];
+                else if (aHead === bTail)
+                    joined = [...b, ...a.slice(1)];
+                else if (aHead === bHead)
+                    joined = [...[...b].reverse(), ...a.slice(1)];
+                if (!joined)
+                    continue;
+                arcs = arcs.filter((_, k) => k !== i && k !== j);
+                arcs.push(joined);
+                merged = true;
+            }
+        }
+    }
+    return arcs;
+}
+
+// Index of every roundabout node in the response: ptKey -> {ring, i}, where
+// ring is the whole circle as a polyline with cumulative distances, so the
+// pavement between two legs can be measured and both ways round compared.
+function roundaboutNodes(elements) {
+    const arcs = elements
+        .filter(el => el.type === 'way' && el.geometry?.length >= 2 && ROUNDABOUT_RE.test(el.tags?.junction ?? ''))
+        .map(el => {
+            const b = !!(el.tags.bridge || el.tags.tunnel);
+            return el.geometry.map(g => (b ? { lat: g.lat, lon: g.lon, b: true } : { lat: g.lat, lon: g.lon }));
+        });
+    const at = new Map();
+    for (const pts of chainArcs(arcs)) {
+        const cum = [0];
+        for (let i = 1; i < pts.length; i++)
+            cum.push(cum[i - 1] + haversine(pts[i - 1], pts[i]));
+        const ring = { pts, cum, closed: ptKey(pts[0]) === ptKey(pts[pts.length - 1]) };
+        // First occurrence wins, so a closed ring's repeated start/end node maps
+        // to index 0; the arc slicing below is correct for either index.
+        pts.forEach((p, i) => {
+            if (!at.has(ptKey(p)))
+                at.set(ptKey(p), { ring, i });
+        });
+    }
+    return at;
+}
+
+// The roundabout pavement from pa to pb, exclusive of both — the shorter way
+// round a closed circle, or the only way round an unclosed one. null if the two
+// points aren't distinct nodes of one roundabout.
+function roundaboutArc(index, pa, pb) {
+    const a = index.get(ptKey(pa)), b = index.get(ptKey(pb));
+    if (!a || !b || a.ring !== b.ring || a.i === b.i)
+        return null;
+    const { pts, cum, closed } = a.ring;
+    const lo = Math.min(a.i, b.i), hi = Math.max(a.i, b.i);
+    const inner = pts.slice(lo + 1, hi);                                    // lo -> hi
+    // The complement runs hi -> (through the ring's start node) -> lo. The last
+    // point is dropped because a closed ring repeats its first.
+    const outer = closed ? [...pts.slice(hi + 1, pts.length - 1), ...pts.slice(0, lo)] : null;
+    const innerLen = cum[hi] - cum[lo];
+    const useInner = !outer || innerLen <= cum[cum.length - 1] - innerLen;
+    const arc = useInner ? inner : outer;
+    const forward = useInner ? a.i === lo : a.i === hi;
+    return forward ? arc : [...arc].reverse();
+}
 
 const MAX_TURN = (70 * Math.PI) / 180; // sharper joins are treated as corners
 const REF_DIST = 20;                   // m inside a way used to measure its bearing
@@ -205,14 +303,38 @@ function interiorRef(pts, atStart) {
 
 // How sharply does travel turn passing through the join? Distinct streets
 // that share a (often TIGER-mangled) name usually meet at right angles; a
-// continuous road carries on nearly straight.
-function turnAngle(wa, aAtStart, wb, bAtStart, joinPt) {
-    const dirIn = bearing(interiorRef(wa.pts, aAtStart), joinPt);
-    const dirOut = bearing(joinPt, interiorRef(wb.pts, bAtStart));
+// continuous road carries on nearly straight. inPt and outPt are the same point
+// at an ordinary join and the two attachment nodes across a roundabout.
+function turnAngle(wa, aAtStart, wb, bAtStart, inPt, outPt = inPt) {
+    const dirIn = bearing(interiorRef(wa.pts, aAtStart), inPt);
+    const dirOut = bearing(outPt, interiorRef(wb.pts, bAtStart));
     let diff = Math.abs(dirIn - dirOut);
     if (diff > Math.PI)
         diff = 2 * Math.PI - diff;
     return diff;
+}
+
+// Orient both ways so the join is in the middle and concatenate them. arc is
+// the roundabout pavement between their attachment nodes (null at an ordinary
+// join, where the two ways share the node and the duplicate is dropped).
+function joinPair(ways, a, b, arc) {
+    const wa = ways[a.i], wb = ways[b.i];
+    const head = a.atStart ? [...wa.pts].reverse() : wa.pts;
+    const tail = b.atStart ? wb.pts : [...wb.pts].reverse();
+    const pts = arc ? [...head, ...arc, ...tail] : [...head, ...tail.slice(1)];
+    // The dropped duplicate (tail[0]) may carry a bridge/tunnel flag the
+    // kept junction point lacks — without it, a 2-node tunnel way loses
+    // its only segment's flag and its deck elevation never interpolates.
+    if (!arc && tail[0].b && !pts[head.length - 1].b) {
+        pts[head.length - 1] = { ...pts[head.length - 1], b: true };
+    }
+    const joined = {
+        ...wa,
+        base: wa.base ?? wb.base,
+        nameType: wa.nameType ?? wb.nameType,
+        pts,
+    };
+    return [...ways.filter((_, i) => i !== a.i && i !== b.i), joined];
 }
 
 // Repeatedly join two ways whose endpoints coincide — where two way-ends meet
@@ -221,7 +343,21 @@ function turnAngle(wa, aAtStart, wb, bAtStart, joinPt) {
 // the U-fold between opposite carriageways fails the bearing gate). The
 // bearing gate also stops different streets that happen to share a name from
 // chaining around a corner.
-function stitchGroup(ways) {
+//
+// Ways that stop at a roundabout share no node — the circle is between them —
+// so a second pass joins those through the circle's own pavement, under the
+// same bearing gate (opposite legs read as straight ahead; a leg turning off
+// the circle is a corner, and stays a separate road as it would anywhere else).
+// Direct joins win over roundabout ones, since a road entering a circle may
+// first have to gather its own carriageways.
+//
+// Among the legs that pass the gate the LONGEST pair wins, not the straightest:
+// a road divided at the circle offers a carriageway stub beside each through
+// chain, and the stubs (being short and splayed) read as straighter. Pairing a
+// stub with a through chain leaves the other chain with only the opposite stub
+// to pair with — too sharp a fold to pass — and the road stays severed. Taking
+// the through chains first joins the route and leaves the stubs to each other.
+function stitchGroup(ways, rings) {
     let merged = true;
     while (merged && ways.length > 1) {
         merged = false;
@@ -258,26 +394,52 @@ function stitchGroup(ways) {
             }
             if (!a)
                 continue;
-            const wa = ways[a.i], wb = ways[b.i];
-            const head = a.atStart ? [...wa.pts].reverse() : wa.pts;
-            const tail = b.atStart ? wb.pts : [...wb.pts].reverse();
-            const pts = [...head, ...tail.slice(1)];
-            // The dropped duplicate (tail[0]) may carry a bridge/tunnel flag the
-            // kept junction point lacks — without it, a 2-node tunnel way loses
-            // its only segment's flag and its deck elevation never interpolates.
-            if (tail[0].b && !pts[head.length - 1].b) {
-                pts[head.length - 1] = { ...pts[head.length - 1], b: true };
-            }
-            const joined = {
-                ...wa,
-                base: wa.base ?? wb.base,
-                nameType: wa.nameType ?? wb.nameType,
-                pts,
-            };
-            ways = ways.filter((_, i) => i !== a.i && i !== b.i);
-            ways.push(joined);
+            ways = joinPair(ways, a, b, null);
             merged = true;
             break;
+        }
+        if (merged || !rings?.size)
+            continue;
+
+        // Roundabout pass: every way-end standing on a circle is a candidate,
+        // and the longest gate-passing pair on one circle wins.
+        const legs = [];
+        ways.forEach((w, i) => {
+            for (const atStart of [true, false]) {
+                const p = atStart ? w.pts[0] : w.pts[w.pts.length - 1];
+                const on = rings.get(ptKey(p));
+                if (on)
+                    legs.push({ i, atStart, p, ring: on.ring });
+            }
+        });
+        const lengths = ways.map(w => w.pts.reduce((sum, p, i) => (i ? sum + haversine(w.pts[i - 1], p) : 0), 0));
+        let a = null, b = null, bestLen = -Infinity, bestArc = null;
+        for (let x = 0; x < legs.length; x++) {
+            for (let y = x + 1; y < legs.length; y++) {
+                const pa = legs[x], pb = legs[y];
+                // Both ends of one way on one circle is a loop road, not a
+                // road severed by the circle.
+                if (pa.i === pb.i || pa.ring !== pb.ring)
+                    continue;
+                const wx = ways[pa.i], wy = ways[pb.i];
+                if (conflict(wx.base, wy.base) || conflict(wx.nameType, wy.nameType))
+                    continue;
+                const arc = roundaboutArc(rings, pa.p, pb.p);
+                if (!arc)
+                    continue;
+                const turn = turnAngle(wx, pa.atStart, wy, pb.atStart, pa.p, pb.p);
+                const len = lengths[pa.i] + lengths[pb.i];
+                if (turn <= MAX_TURN && len > bestLen) {
+                    bestLen = len;
+                    a = pa;
+                    b = pb;
+                    bestArc = arc;
+                }
+            }
+        }
+        if (a) {
+            ways = joinPair(ways, a, b, bestArc);
+            merged = true;
         }
     }
     return ways;
@@ -313,18 +475,20 @@ const cellsOf = (latLo, latHi, lonLo, lonHi, fn) => {
             fn(`${a},${o}`);
 };
 
-// Every bridge deck in the response (ranked class or not) as a grid of segments,
-// so a road is tested against the few decks near it instead of all of them.
+// Every bridge deck in the response (ranked class or not), as raw elements. A
+// bridge tag with a layer at or below the roadway is contradictory data; skip it
+// rather than linearize a road on its word. Exported so test/make-fixture.mjs
+// can store exactly the decks the underpass pass ran against.
+export function bridgeWays(elements) {
+    return elements.filter(el => el.type === 'way' && el.tags?.bridge && el.geometry?.length >= 2
+        && (el.tags.layer != null ? +el.tags.layer : 1) > 0);
+}
+
+// The same decks as a grid of segments, so a road is tested against the few
+// decks near it instead of all of them.
 export function bridgeIndex(elements) {
     const grid = new Map();
-    for (const el of elements) {
-        if (el.type !== 'way' || !el.tags?.bridge || !(el.geometry?.length >= 2))
-            continue;
-        // A bridge tag with a layer at or below the roadway is contradictory
-        // data; skip it rather than linearize a road on its word.
-        const layer = el.tags.layer != null ? +el.tags.layer : 1;
-        if (!(layer > 0))
-            continue;
+    for (const el of bridgeWays(elements)) {
         for (let i = 1; i < el.geometry.length; i++) {
             const seg = [el.geometry[i - 1], el.geometry[i]];
             cellsOf(
