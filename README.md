@@ -146,6 +146,14 @@ Ranks are based on all the downloaded map data, not just the part in view.
     a fixed length rather than a share of the incline: a flat spot is a
     fixed-size feature (~100–250 m in the towns measured) and doesn't scale with
     the climb, so a share-based limit only punishes short inclines.
+  - **Its ends are trimmed to road that inclines the way the incline runs**, not
+    merely to road that isn't flat. A qualifying stretch can reach past the
+    bottom of the hill onto ground falling away from it; that padded the length
+    while subtracting from the gain, so the run read longer and gentler than the
+    hill it describes. Brevard's White Squirrel Lane both began and ended on a
+    descent, reported as 919 m at 9.9 % where the incline is 820 m at 12.0 %.
+    Reversals *inside* a run still count — that's what the counter-slope budget
+    is for; only the ends have to earn their place.
   - An incline may span several connected roads (the "over N roads" knob): a
     climb that continues across a junction onto a differently-named road is
     followed through a junction graph (built from coincident sample points, so it

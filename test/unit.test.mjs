@@ -392,6 +392,21 @@ assert(hillSides.length === 2 && hillSides.every(i => i.span > 1400),
 assert(hillSides.every(i => Math.abs(i.grade - 0.05) < 0.005),
     `each side of the hill reads 5% (${hillSides.map(i => (i.grade * 100).toFixed(1) + '%').join(', ')})`);
 
+// An incline must not begin or end on road running the other way. A 100 m dip
+// hangs off the bottom of a 1 km climb: the whole thing still averages over 3%,
+// so the interval qualifies, and trimming ends by |grade| alone kept the dip —
+// it padded the span while subtracting from the gain, and the popup opened on a
+// negative segment. The reported run must start at the low point instead.
+const hookRoad = resample([{ lat: 35, lon: -82.5 }, { lat: 35.0099, lon: -82.5 }]); // ~1.1 km
+const hookElev = analyzeRoad(hookRoad, hookRoad.map(s =>
+    (s.d <= 100 ? 100 - s.d * 0.08 : 92 + (s.d - 100) * 0.06))).elev;   // 8% down, then 6% up
+const hooked = longestInclines(hookRoad, hookElev, 800);
+const startsUp = i => hookElev[i.i + 1] > hookElev[i.i] && hookElev[i.j] > hookElev[i.j - 1];
+assert(hooked.length === 1 && startsUp(hooked[0]),
+    `an incline starts where it starts inclining (${hooked.map(i => `${hookRoad[i.i].d.toFixed(0)}–${hookRoad[i.j].d.toFixed(0)} m`).join(', ') || 'none'})`);
+assert(hooked[0].i > 0 && Math.abs(hooked[0].grade - 0.06) < 0.006,
+    `the trimmed run reads its own 6%, not the dip-diluted average (${(hooked[0].grade * 100).toFixed(1)}%)`);
+
 // Two inclines meeting at a valley bottom must split into two runs, not merge
 // into one incoherent ~0 % run (the Bolin Creek case).
 const vRoad = resample([{ lat: 35, lon: -82.4 }, { lat: 35.027, lon: -82.4 }]); // ~3 km
@@ -605,9 +620,11 @@ assert(crossing.span - severedBest > 400,
     `${severedBest ? Math.round(severedBest) + ' m' : 'nothing over the 800 m bar'} severed)`);
 
 // The real case for signed segment grades, from the Brevard fixture: White
-// Squirrel Lane's 919 m long incline averages ~10 % but its last segment drops
-// 15.4 %. Printed as a magnitude that reads as the steepest climbing segment on
-// the road, directly under a row calling the whole run an incline.
+// Squirrel Lane's 820 m long incline averages 12 % but dips 6.8 % partway up.
+// Printed as a magnitude that reads as ordinary climbing, directly under a row
+// calling the whole run an incline. (Reversals at the ENDS are trimmed off the
+// incline entirely — see the grind-mask checks below — so only interior ones
+// survive to be signed.)
 const squirrel = fixtures.brevard.roads.find(r => r.name === 'White Squirrel Lane');
 const squirrelInc = longestInclines(squirrel.samples, squirrel.elev, 800)[0];
 const inclineRoad = {
@@ -615,10 +632,37 @@ const inclineRoad = {
     rankedSpans: [{ i: squirrelInc.i, j: squirrelInc.j, rank: 1, gain: squirrelInc.gain, span: squirrelInc.span, grade: squirrelInc.grade }],
 };
 const segPct = k => popupHtml(inclineRoad, null, 250, k, 'incline').match(/segment<\/span><b>(-?[\d.]+%)/)?.[1];
-assert(segPct(squirrelInc.j - 1) === '-15.4%',
-    `fixture: the segment falling inside White Squirrel Ln's incline reads negative (${segPct(squirrelInc.j - 1)})`);
-assert(segPct(squirrelInc.i + 1)?.startsWith('-') === false,
-    `fixture: a segment climbing with that incline stays unsigned (${segPct(squirrelInc.i + 1)})`);
+const squirrelDir = Math.sign(squirrel.elev[squirrelInc.j] - squirrel.elev[squirrelInc.i]);
+const dipSeg = (() => {
+    for (let k = squirrelInc.i; k < squirrelInc.j; k++)
+        if (squirrelDir * (squirrel.elev[k + 1] - squirrel.elev[k]) < 0)
+            return k;
+    return null;
+})();
+assert(segPct(dipSeg) === '-6.8%',
+    `fixture: the segment falling inside White Squirrel Ln's incline reads negative (${segPct(dipSeg)})`);
+assert(segPct(squirrelInc.i)?.startsWith('-') === false,
+    `fixture: a segment climbing with that incline stays unsigned (${segPct(squirrelInc.i)})`);
+
+// Real profiles are noisier than any synthetic one, so hold the rule over every
+// incline in every fixture: none may open or close on a segment running against
+// it. Before the ends were trimmed by direction, 4 of Brevard's 5 did.
+let endChecked = 0, badEnd = null;
+for (const [n, f] of Object.entries(fixtures))
+    for (const r of f.roads) {
+        if (r.samples.length < 3)
+            continue;
+        for (const inc of longestInclines(r.samples, r.elev, 800)) {
+            const dir = Math.sign(r.elev[inc.j] - r.elev[inc.i]);
+            const pct = k => dir * (r.elev[k + 1] - r.elev[k]) / (r.samples[k + 1].d - r.samples[k].d) * 100;
+            endChecked++;
+            for (const k of [inc.i, inc.j - 1])
+                if (pct(k) < 0)
+                    badEnd ??= `${n}/${r.name} segment ${k} at ${pct(k).toFixed(1)}%`;
+        }
+    }
+assert(endChecked > 5 && !badEnd,
+    `fixtures: all ${endChecked} inclines begin and end on inclining road${badEnd ? ` — except ${badEnd}` : ''}`);
 
 // DEM seam despiking: a real Fonllech Hir profile (Harlech) crosses a ~92 m
 // step artifact in the terrarium tiles, so a weaving road reads ~243 m, dips

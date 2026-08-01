@@ -352,6 +352,13 @@ const dipTooBig = (gain, counter) => counter > Math.max(DIP_ABS, DIP_FRAC * (gai
 const DEAD_RUN_MAX = 300;       // m of consecutive non-inclining road allowed
 const DEAD_GRADE = GRIND_MIN_GRADE / 2;  // below this, as traveled, road is "dead"
 
+// Does segment k carry an incline traveling in direction dir (+1 rising with
+// the point order, -1 falling) forward? Flat road and road running backwards
+// both fail — the same test the end trim and the dead-run rule need, so they
+// can't drift apart.
+const advances = (samples, elev, k, dir) =>
+    dir * (elev[k + 1] - elev[k]) / (samples[k + 1].d - samples[k].d) >= DEAD_GRADE;
+
 // Longest run inside [i..j] that doesn't advance the incline — flat, or running
 // backwards. ascending is the interval's direction of travel. Returns its length
 // and segment extent {len, from, to}, so a caller can cut the stall out rather
@@ -360,8 +367,7 @@ function deadRun(samples, elev, i, j, ascending) {
     const worst = { len: 0, from: -1, to: -1 };
     let start = -1;
     for (let k = i; k < j; k++) {
-        const g = (elev[k + 1] - elev[k]) / (samples[k + 1].d - samples[k].d);
-        if ((ascending ? g : -g) < DEAD_GRADE) {
+        if (!advances(samples, elev, k, ascending ? 1 : -1)) {
             if (start < 0)
                 start = k;
             const len = samples[k + 1].d - samples[start].d;
@@ -427,7 +433,10 @@ export function grindMask(samples, elev, minSpan) {
     // the ground actually inclines, drop leftovers shorter than the span, and
     // split runs that aren't a single mostly-monotonic incline at their
     // deepest reversal, recursing on the halves.
-    const localOk = k => Math.abs(elev[k + 1] - elev[k]) / (samples[k + 1].d - samples[k].d) >= GRIND_MIN_GRADE / 2;
+    // Nearly-level end segments belong to no incline in either direction. Only
+    // the magnitude can be judged here: the run may still hold a whole summit,
+    // whose far side has to survive to the reversal split below.
+    const localOk = k => Math.abs(elev[k + 1] - elev[k]) / (samples[k + 1].d - samples[k].d) >= DEAD_GRADE;
     const clear = (a, b) => {
         for (let k = a; k <= b; k++)
             mask[k] = 0;
@@ -452,6 +461,25 @@ export function grindMask(samples, elev, minSpan) {
         // "fails to advance" the descent, and a hill is not a stall. Those fail
         // the counter-slope test and belong to the reversal split below.
         const oneWay = gain / span >= GRIND_MIN_GRADE && !dipTooBig(gain, counter);
+        // Direction known at last, so an end running AGAINST it can go. The
+        // magnitude trim above keeps such a segment — White Squirrel Lane's
+        // 919 m incline opened on a 5.2 % descent and closed on a 15.4 % one,
+        // both counted into its span while subtracting from its gain. Re-refine
+        // the survivor rather than patch the stats: a shorter extent may now
+        // fall under the span, or stall, or no longer read as one incline.
+        if (oneWay) {
+            const dir = net > 0 ? 1 : -1;
+            let a2 = a, b2 = b;
+            while (a2 <= b2 && !advances(samples, elev, a2, dir))
+                mask[a2++] = 0;
+            while (b2 >= a2 && !advances(samples, elev, b2, dir))
+                mask[b2--] = 0;
+            if (a2 !== a || b2 !== b) {
+                if (a2 <= b2)
+                    refine(a2, b2);
+                return;
+            }
+        }
         const dead = oneWay ? deadRun(samples, elev, a, b + 1, net > 0) : null;
         if (oneWay && dead.len <= DEAD_RUN_MAX)
             return; // a single coherent incline
