@@ -20,7 +20,7 @@
 // The exported ramps/constants double as the live-experiment surface (see the
 // window.steepest hook in app.js).
 
-import { haversine, GRIND_MIN_GRADE } from './metrics.js';
+import { haversine, bearing, GRIND_MIN_GRADE } from './metrics.js';
 
 export const GRADE_MIN = 0.03; // below this a segment gets no highlight at all
 export const GRADE_BREAK = 0.12; // grade where the ramp reaches full-chroma color
@@ -210,6 +210,22 @@ const fmtLen = m => m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${Math.round(m)
 const fmtClimb = c => `↑${Math.round(c.gain)}m/${Math.round(c.span)}m ≈ ${fmtPct(c.grade)}`;
 // Incline-list sub-line: gain and average grade (the length is the row's value).
 const fmtIncline = c => `↑${Math.round(c.gain)}m ≈ ${fmtPct(c.grade)}`;
+
+// Google's documented Maps URL for a Street View panorama — map_action=pano
+// with a viewpoint, which snaps to the nearest pano Google has:
+// https://developers.google.com/maps/documentation/urls/get-started
+// Stand at the low end of the segment and face the high end, so the picture
+// opens on the pitch the popup just quoted rather than the view down it. The
+// camera is tilted by the segment's own grade, which is the whole point of
+// looking: a 20 % wall at pitch 0 is mostly sky and asphalt.
+function streetViewUrl(a, b, rise) {
+    const [from, to] = rise >= 0 ? [a, b] : [b, a];
+    const heading = (bearing(from, to) * 180 / Math.PI + 360) % 360;
+    const pitch = Math.atan2(Math.abs(rise), haversine(a, b)) * 180 / Math.PI;
+    return 'https://www.google.com/maps/@?api=1&map_action=pano' +
+        `&viewpoint=${from.lat.toFixed(6)},${from.lon.toFixed(6)}` +
+        `&heading=${heading.toFixed(1)}&pitch=${pitch.toFixed(1)}`;
+}
 const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
 // Shorten common street-type words for the narrow list, so long names wrap
@@ -353,14 +369,22 @@ export function popupHtml(road, stretchValue, windowM, segK, rankMode) {
         if (rk)
             dir = runDir(rk.i, rk.j);
     }
-    let segRow = '';
+    let segRow = '', viewRow = '';
     if (segK != null) {
         const s0 = road.samples[segK], s1 = road.samples[segK + 1];
         const rise = road.elev[segK + 1] - road.elev[segK];
         const g = (dir ? rise * dir : Math.abs(rise)) / (s1.d - s0.d);
         segRow = `<div class="popup-row popup-active"><span>This ${(s1.d - s0.d).toFixed(1)} m segment</span><b>${fmtPct(g)}</b></div>`;
+        // Google places the camera at its nearest pano, which on a back road can
+        // be some way off (or missing) — hence "nearest", not a promise. The
+        // label tracks the grade the row above prints: nothing to look up when
+        // that reads 0.0 %.
+        const way = Math.abs(g) < 0.0005 ? 'along' : 'up';
+        viewRow = `<a class="popup-view" href="${streetViewUrl(s0, s1, rise)}" target="_blank" rel="noopener"` +
+            ` title="Opens the nearest Google Street View to the foot of this segment, facing ${way} it">` +
+            `Street View ${way} this segment ↗</a>`;
     }
-    return `<div class="popup">${name}${segRow}${containerRow}</div>`;
+    return `<div class="popup">${name}${segRow}${containerRow}${viewRow}</div>`;
 }
 
 // Nearest sample segment to a clicked point (planar approximation is plenty

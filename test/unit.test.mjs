@@ -177,6 +177,29 @@ const plain = { name: 'Plain St', samples: dipRoad(1).samples, elev: dipRoad(1).
 assert(pctOf(popupHtml(plain, null, 250, 1, 'sustained')) === '4.0%',
     `popup: an unsigned segment keeps its magnitude (${pctOf(popupHtml(plain, null, 250, 1, 'sustained'))})`);
 
+// Street View link: stand at the LOW end of the clicked segment and face the
+// high end, whichever way the road's points happen to run, tilted by the grade.
+// A 25 m segment climbing 2.5 m due north at 35N: heading 0, pitch ~5.7.
+const nsRoad = {
+    name: 'North St',
+    samples: [{ lat: 35, lon: -82, d: 0 }, { lat: 35.000225, lon: -82, d: 25 }],
+    elev: [100, 102.5],
+    segs: [0.10],
+};
+const svOf = html => Object.fromEntries(new URL(html.match(/href="([^"]+)"/)[1].replace(/&amp;/g, '&')).searchParams);
+const north = svOf(popupHtml(nsRoad, null, 250, 0, 'sustained'));
+assert(north.map_action === 'pano' && north.api === '1',
+    `street view: a pano URL (${JSON.stringify(north)})`);
+assert(north.viewpoint === '35.000000,-82.000000' && Math.abs(+north.heading) < 1,
+    `street view: stands at the foot facing uphill (${north.viewpoint} @ ${north.heading}°)`);
+assert(Math.abs(+north.pitch - 5.7) < 0.3, `street view: tilted by the grade (${north.pitch}°)`);
+// Same physical segment, points stored the other way: the camera must not flip
+// to the top looking down.
+const southRoad = { ...nsRoad, samples: [{ lat: 35.000225, lon: -82, d: 0 }, { lat: 35, lon: -82, d: 25 }], elev: [102.5, 100] };
+const south = svOf(popupHtml(southRoad, null, 250, 0, 'sustained'));
+assert(south.viewpoint === '35.000000,-82.000000' && Math.abs(+south.heading) < 1,
+    `street view: stored backwards, still from the foot (${south.viewpoint} @ ${south.heading}°)`);
+
 // CSV export (csv.js): per-mode columns, endpoints, escaping, filenames.
 const csvRoad = (() => {
     const s = resample([{ lat: 35, lon: -82 }, { lat: 35.009, lon: -82 }]); // ~1 km due north

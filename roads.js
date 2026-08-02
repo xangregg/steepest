@@ -1,7 +1,7 @@
 // Location lookup (Nominatim) and road fetching (Overpass), plus stitching of
 // same-name OSM ways into continuous roads.
 
-import { haversine } from './metrics.js';
+import { haversine, bearing } from './metrics.js';
 
 const NOMINATIM = 'https://nominatim.openstreetmap.org/search';
 const OVERPASS_ENDPOINTS = [
@@ -278,15 +278,6 @@ function roundaboutArc(index, pa, pb) {
 
 const MAX_TURN = (70 * Math.PI) / 180; // sharper joins are treated as corners
 const REF_DIST = 20;                   // m inside a way used to measure its bearing
-
-function bearing(a, b) {
-    const toR = Math.PI / 180;
-    const dLon = (b.lon - a.lon) * toR;
-    const y = Math.sin(dLon) * Math.cos(b.lat * toR);
-    const x = Math.cos(a.lat * toR) * Math.sin(b.lat * toR) -
-        Math.sin(a.lat * toR) * Math.cos(b.lat * toR) * Math.cos(dLon);
-    return Math.atan2(y, x);
-}
 
 // A point ~REF_DIST m along the way from the given end (immediate neighbors
 // can be centimeters away, which makes bearings noisy).

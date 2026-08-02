@@ -227,6 +227,12 @@ same grade in every town.
   descent read as the steepest climbing metre on the road. The sign is relative
   to the climb or incline named beneath it, never to the road's stored
   direction; a segment with no such run around it stays unsigned.
+- **Street View from the foot, facing up.** The popup ends with a link to
+  Google's nearest panorama to the *low* end of the clicked segment, aimed along
+  it and tilted by its grade — a 20 % wall viewed level is mostly sky and
+  asphalt. It's a plain link (Maps URLs API, no key, no embed, nothing loaded
+  until you click), and Google snaps to whatever pano it has, which on a back
+  road can be some way off or missing entirely.
 - **Sidebar & sharing.** The bar chart shares the color gradient and doubles as
   the ranked list; hover to highlight on the map, click to zoom. A "Download CSV"
   button exports the current ranking (begin/end lat/lon/elevation per stretch,

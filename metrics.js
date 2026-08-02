@@ -15,6 +15,18 @@ export function haversine(a, b) {
     return 2 * R * Math.asin(Math.sqrt(h));
 }
 
+// Initial compass bearing a -> b, in radians east of north. Shared by way
+// stitching (how sharply travel turns through a join) and the Street View link
+// (which way to face).
+export function bearing(a, b) {
+    const toR = Math.PI / 180;
+    const dLon = (b.lon - a.lon) * toR;
+    const y = Math.sin(dLon) * Math.cos(b.lat * toR);
+    const x = Math.cos(a.lat * toR) * Math.sin(b.lat * toR) -
+        Math.sin(a.lat * toR) * Math.cos(b.lat * toR) * Math.cos(dLon);
+    return Math.atan2(y, x);
+}
+
 // Polyline -> evenly spaced samples [{lat, lon, d}] (~step m apart, endpoints
 // included). Even spacing keeps the elevation smoothing well-behaved and never
 // drops the rise across short OSM segments. A sample inside a bridge/tunnel

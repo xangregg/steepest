@@ -376,6 +376,19 @@ main { flex: 1; display: flex; min-height: 0; }
 .popup-active b { color: var(--accent); }
 /* City-wide rank tag trailing a container value (e.g. "11.8% #14"). */
 .popup-rank { color: var(--ink-2); font-weight: 550; margin-left: 4px; }
+/* Street View link: an aside under the readings, not a third one of them. The
+   element is in the selector to outweigh Leaflet's own `.leaflet-container a`. */
+.popup a.popup-view {
+    display: inline-block;
+    margin-top: 6px;
+    padding-top: 5px;
+    border-top: 1px solid var(--hairline);
+    width: 100%;
+    color: var(--ink-2);
+    font-size: 11px;
+    text-decoration: none;
+}
+.popup a.popup-view:hover, .popup a.popup-view:focus-visible { color: var(--accent); text-decoration: underline; }
 
 @media (max-width: 760px) {
     main { flex-direction: column; }
