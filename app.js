@@ -238,7 +238,7 @@ function render() {
         }
         // Rows are CLIMBS: all roads' climbs compete in one pool, so a road
         // with two distinct hills can take two spots. Same-name entries are
-        // kept only when geographically distinct — parallel carriageways and
+        // kept only when geographically distinct — parallel roadways and
         // overlapping same-name chains report one row per physical climb.
         const pool = [];
         for (const r of ranked)
@@ -317,7 +317,7 @@ function render() {
         // sustainedStretches) compete in one pool, so a road with two steep
         // sections separated by gentler road can take two spots, like climb
         // mode. Same-name entries are deduped geographically, so parallel
-        // carriageways and same-name pieces still yield one row per hill.
+        // roadways and same-name pieces still yield one row per hill.
         const pool = [];
         for (const r of ranked)
             for (const s of sustainedStretches(r.samples, r.elev, windowM, GRADE_MIN, 3))

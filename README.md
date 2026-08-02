@@ -78,7 +78,7 @@ roads, tracks, and paths).
   is: I-40 over Swannanoa Gap at Black Mountain, NC climbs 369 m at 5.4 % and
   tops that search's longest-incline ranking. A `motorway_link` is steep by
   design and says nothing about the terrain, so ramps stay out.
-- **Unnamed routes are labelled by their number.** OSM gives a motorway no
+- **Unnamed routes are labeled by their number.** OSM gives a motorway no
   `name`, only a `ref` — and where routes run concurrently, several of them
   ("I 40;US 70"). The first is taken as the road's name, which both labels it
   and keeps its chain whole, since stitching groups by name and the raw tag
@@ -103,7 +103,7 @@ roads, tracks, and paths).
   each end, so the elevation model reports the gorge under a bridge, not the
   roadway.
 - **Underpasses.** The mirror case: nothing tags the road *underneath* a bridge,
-  yet the terrain tiles read the deck overhead, putting a metre-scale hump on a
+  yet the terrain tiles read the deck overhead, putting a meter-scale hump on a
   flat street. OSM gives at-grade junctions a shared node, so a road whose
   geometry crosses a bridge *between* nodes must pass under it — those samples
   get the same straight-line treatment, 40 m either side of the crossing.
@@ -154,7 +154,7 @@ Ranks are based on all the downloaded map data, not just the part in view.
   - An incline has to incline throughout: no more than 300 m of it in a row may
     be flat or running backwards. The counter-slope budget forgives a dip by its
     depth, which says nothing about a *plateau* — without this, a climb, half a
-    kilometre of flat, and a second climb are reported as one long, gentle
+    kilometer of flat, and a second climb are reported as one long, gentle
     incline, and the flat part is drawn as though it were climbing. The limit is
     a fixed length rather than a share of the incline: a flat spot is a
     fixed-size feature (~100–250 m in the towns measured) and doesn't scale with
@@ -237,7 +237,7 @@ same grade in every town.
   a long incline may hold short drops (~12 % of the segments inside Brevard's
   long inclines run the other way, one of them at 15 %), and the ribbon colors
   those by steepness alone, so the popup prints them negative rather than let a
-  descent read as the steepest climbing metre on the road. The sign is relative
+  descent read as the steepest climbing meter on the road. The sign is relative
   to the climb or incline named beneath it, never to the road's stored
   direction; a segment with no such run around it stays unsigned.
 - **Street View from the foot, facing up.** The popup ends with a link to
@@ -261,7 +261,7 @@ same grade in every town.
   road becoming a divided road) merge their straightest pair. A second pass
   rejoins legs left on opposite sides of a roundabout through the circle's own
   pavement, taking the longest gate-passing pair so a divided approach's
-  carriageway stubs can't hijack the join. Bridge/tunnel
+  roadway stubs can't hijack the join. Bridge/tunnel
   points are flagged for elevation correction, as are the samples of a road
   found (by `bridgeIndex`/`markUnderpasses`) to cross under someone else's
   bridge.
@@ -313,7 +313,7 @@ open http://localhost:8080
 useful for demos or UI work when the public APIs are slow, e.g.
 `http://localhost:8080/#fixture=brevard`. Capture more (or refresh this one)
 with `node test/make-fixture.mjs "<place>" <radius_m> <name>` when Overpass is
-responsive; `<place>` may be a `lat, lon` pair to centre on a specific feature.
+responsive; `<place>` may be a `lat, lon` pair to center on a specific feature.
 
 ## Testing
 

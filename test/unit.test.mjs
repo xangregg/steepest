@@ -25,12 +25,12 @@ const gateRoads = prepareRoads([
 const chains = name => gateRoads.filter(r => r.name === name).length;
 
 // Two-way road becoming a divided road: three same-name ends meet where the
-// carriageways split. The through pair must stitch; the opposite carriageway
+// roadways split. The through pair must stitch; the opposite roadway
 // (a ~180° fold) must stay separate.
 const divided = prepareRoads([
     way(8, 'Divided St', [[35, -76], [35.001, -76]]),                       // two-way approach
-    way(9, 'Divided St', [[35.001, -76], [35.002, -76.00005]]),             // carriageway onward
-    way(10, 'Divided St', [[35.002, -76.0003], [35.001, -76]]),             // carriageway returning
+    way(9, 'Divided St', [[35.001, -76], [35.002, -76.00005]]),             // roadway onward
+    way(10, 'Divided St', [[35.002, -76.0003], [35.001, -76]]),             // roadway returning
 ]);
 const dividedLens = divided.map(r => r.pts.length).sort((x, y) => y - x);
 assert(divided.length === 2 && dividedLens[0] === 3,
@@ -134,7 +134,7 @@ const corner = prepareRoads([
 assert(corner.length === 2, `roundabout: a 90° leg does not stitch through (${corner.length} entries)`);
 
 // Divided at the circle (Mount Carmel Church Rd, Chapel Hill): each side offers
-// a long through chain AND a short one-way carriageway stub. The approaches
+// a long through chain AND a short one-way stub. The approaches
 // bend as they reach the circle, so a stub — short, and square to the circle —
 // reads straighter (~14°) than the two through chains read to each other
 // (~45°). Pairing by straightness alone therefore hooks a stub to a through
@@ -144,16 +144,16 @@ const split = [34.9997, -73], joinN = [35.0003, -73];
 const dividedRing = prepareRoads([
     roundabout(300, 35, -73),
     way(301, 'Divided Road', [[34.9985, -73.0008], split]),              // south approach
-    way(302, 'Divided Road', [split, ringNode(35, -73, 210)]),           // south carriageway
-    way(303, 'Divided Road', [ringNode(35, -73, 150), split]),           // south carriageway back
-    way(304, 'Divided Road', [ringNode(35, -73, 30), joinN]),            // north carriageway
-    way(305, 'Divided Road', [joinN, ringNode(35, -73, 330)]),           // north carriageway back
+    way(302, 'Divided Road', [split, ringNode(35, -73, 210)]),           // south roadway
+    way(303, 'Divided Road', [ringNode(35, -73, 150), split]),           // south roadway back
+    way(304, 'Divided Road', [ringNode(35, -73, 30), joinN]),            // north roadway
+    way(305, 'Divided Road', [joinN, ringNode(35, -73, 330)]),           // north roadway back
     way(306, 'Divided Road', [joinN, [35.002, -73.0008]]),               // north approach
 ]);
 const longest = dividedRing.slice().sort((a, b) => legLen(b) - legLen(a))[0];
 const ends = [longest.pts[0].lat, longest.pts[longest.pts.length - 1].lat].sort();
 assert(Math.abs(ends[0] - 34.9985) < 1e-6 && Math.abs(ends[1] - 35.002) < 1e-6,
-    `roundabout: the through carriageways join across the divided approach (${legLen(longest).toFixed(0)} m, ` +
+    `roundabout: the through roadways join across the divided approach (${legLen(longest).toFixed(0)} m, ` +
     `${ends[0].toFixed(4)} -> ${ends[1].toFixed(4)})`);
 
 import { resample, analyzeRoad, segmentSustained, sustainedGrade, bestSustainedWindow, sustainedStretches, hardestClimb, hardestClimbs, grindMask, longestIncline, longestInclines, longestInclinePaths, haversine, SAMPLE_STEP } from '../metrics.js';
@@ -434,7 +434,7 @@ const oneIncline = longestInclines(plateau, shortRest, 800);
 assert(oneIncline.length === 1 && oneIncline[0].span > 2500,
     `a 200 m rest stays one incline (${oneIncline.map(i => i.span.toFixed(0) + ' m').join(', ') || 'none'})`);
 
-// A summit is not a stall. On a run holding a whole hill, every metre of the
+// A summit is not a stall. On a run holding a whole hill, every meter of the
 // climb "fails to advance" the descent (and vice versa), so applying the
 // dead-run cap before the run is known to head one way deleted the descent
 // outright — Brighton Road, Pittsburgh: a clean 822 m at 5% that vanished.
@@ -537,7 +537,7 @@ assert(deck < 0.03, `all-bridge chain reads as its deck: ${(deck * 100).toFixed(
 
 // Underpasses: the mirror of the bridge case. A road crossed by a bridge deck
 // with no shared node passes underneath, and its elevation samples read the deck
-// overhead. Modelled on Fordham Blvd over Raleigh Rd, Chapel Hill, where the
+// overhead. Modeled on Fordham Blvd over Raleigh Rd, Chapel Hill, where the
 // terrarium tiles put a ~6 m hump (a fake ~14 % pitch) on a flat street.
 const eastWest = (id, lat, tags = {}) => ({
     type: 'way', id, tags: { highway: 'residential', name: 'Under St', ...tags },
@@ -709,7 +709,7 @@ assert(segPct(squirrelInc.i)?.startsWith('-') === false,
 // a pile of "(unnamed …)" fragments that never stitch.
 const i40 = fixtures.motorway.roads.filter(r => r.name === 'I 40');
 assert(i40.length === 2 && i40.every(r => r.length > 8000),
-    `fixture: I 40 is ranked and stitched, one chain per carriageway ` +
+    `fixture: I 40 is ranked and stitched, one chain per roadway ` +
     `(${fixtures.motorway.roads.map(r => `${r.name} ${(r.length / 1000).toFixed(1)}km`).join(', ')})`);
 assert(!fixtures.motorway.roads.some(r => r.unnamed),
     'fixture: nothing on the interstate corridor is left unnamed');

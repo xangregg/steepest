@@ -26,10 +26,10 @@ const decodeTile = async url => {
     return PNG.sync.read(Buffer.from(await res.arrayBuffer())).data;
 };
 
-// Coordinates accepted as well as place names, so a fixture can be centred on a
+// Coordinates accepted as well as place names, so a fixture can be centered on a
 // specific feature (an underpass, say) that no place name lands on.
 const center = parseLatLon(query) ?? await geocode(query);
-console.log(`centred on: ${center.label}`);
+console.log(`centered on: ${center.label}`);
 const elements = await fetchRoads(center, radiusM);
 const decks = bridgeIndex(elements);
 const roads = prepareRoads(elements)

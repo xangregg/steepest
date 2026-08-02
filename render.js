@@ -59,7 +59,7 @@ export const GRIND_COLORS = { light: '#dd9922', dark: '#e9b04a' };
 // keeps the warm long-incline character while standing clear of the reds.
 export const GRIND_COLORS_SINGLE = { light: '#b8a41a', dark: '#d4c24a' };
 // Applied as CSS opacity on the inclines pane (not per polygon), so
-// overlapping ribbons — parallel carriageways, crossing inclines — merge into
+// overlapping ribbons — parallel roadways, crossing inclines — merge into
 // one solid shape before the fade and never double-darken.
 let GRIND_OPACITY = 0.4;
 
@@ -199,7 +199,7 @@ export function initMap(el, mode) {
 
 // Grades print as magnitudes except where a sign carries meaning (a segment
 // running against the climb it sits in). Anything that rounds to zero drops the
-// sign, so a millimetre of DEM noise can't print as "-0.0%".
+// sign, so a millimeter of DEM noise can't print as "-0.0%".
 const fmtPct = g => `${(Math.abs(g) < 0.0005 ? 0 : g * 100).toFixed(1)}%`;
 const fmtLen = m => m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${Math.round(m)} m`;
 // Compact rise/run form (↑43m/299m ≈ 14.3%): wraps less than "↑43 m @ 14.3%

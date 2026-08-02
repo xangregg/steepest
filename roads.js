@@ -344,8 +344,8 @@ function joinPair(ways, a, b, arc) {
 
 // Repeatedly join two ways whose endpoints coincide — where two way-ends meet
 // cleanly, or where three meet and one pair clearly continues straight (a
-// two-way road becoming a divided road: the through-carriageway chains on,
-// the U-fold between opposite carriageways fails the bearing gate). The
+// two-way road becoming a divided road: the through-roadway chains on,
+// the U-fold between opposite roadways fails the bearing gate). The
 // bearing gate also stops different streets that happen to share a name from
 // chaining around a corner.
 //
@@ -354,10 +354,10 @@ function joinPair(ways, a, b, arc) {
 // same bearing gate (opposite legs read as straight ahead; a leg turning off
 // the circle is a corner, and stays a separate road as it would anywhere else).
 // Direct joins win over roundabout ones, since a road entering a circle may
-// first have to gather its own carriageways.
+// first have to gather its own roadways.
 //
 // Among the legs that pass the gate the LONGEST pair wins, not the straightest:
-// a road divided at the circle offers a carriageway stub beside each through
+// a road divided at the circle offers a short one-way stub beside each through
 // chain, and the stubs (being short and splayed) read as straighter. Pairing a
 // stub with a through chain leaves the other chain with only the opposite stub
 // to pair with — too sharp a fold to pass — and the road stays severed. Taking
@@ -454,7 +454,7 @@ function stitchGroup(ways, rings) {
 // A bridge carries its road above the terrain, so its own samples read the
 // gorge below (handled by the b flag). The mirror case is the road *underneath*:
 // nothing in OSM tags it — the crossing is implicit in the geometry — yet the
-// elevation model reads the deck overhead, so a flat street picks up a metre-
+// elevation model reads the deck overhead, so a flat street picks up a meter-
 // scale hump where an interchange or railway crosses it. Fordham Blvd over
 // Raleigh Rd in Chapel Hill adds ~6 m, a fake ~14 % pitch.
 //
@@ -469,7 +469,7 @@ function stitchGroup(ways, rings) {
 // crossing locates the deck's centerline; the elevation is spoiled across the
 // structure's footprint (~30 m for a divided highway, more at a skew) smeared by
 // the ~15 m elevation cell. Windows from neighboring crossings merge into one
-// run, so a multi-carriageway interchange widens itself.
+// run, so an interchange with several roadways widens itself.
 const UNDERPASS_HALF = 40;  // m
 
 const CELL = 0.002;  // deg (~200 m) — grid cell for looking up nearby decks

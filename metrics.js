@@ -469,7 +469,7 @@ export function grindMask(samples, elev, minSpan) {
         const gain = Math.abs(net);
         const counter = net > 0 ? down[b + 1] - down[a] : up[b + 1] - up[a];
         // The dead-run test only means anything once the run is known to head
-        // one way: on a run holding a whole summit, every metre of the ascent
+        // one way: on a run holding a whole summit, every meter of the ascent
         // "fails to advance" the descent, and a hill is not a stall. Those fail
         // the counter-slope test and belong to the reversal split below.
         const oneWay = gain / span >= GRIND_MIN_GRADE && !dipTooBig(gain, counter);
