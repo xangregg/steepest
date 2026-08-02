@@ -7,7 +7,7 @@ const DB_NAME = 'steepest';
 const STORE = 'searches';
 // Bump when the processed-road shape changes: it expires cached searches, and
 // test/make-fixture.mjs stamps it into fixtures so a stale one can be spotted.
-export const VERSION_TAG = 9;
+export const VERSION_TAG = 10;
 const TTL_MS = 14 * 24 * 3600 * 1000;        // roads barely change; 2 weeks is safe
 
 function openDb() {

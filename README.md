@@ -69,8 +69,21 @@ place name into coordinates (a `lat, lon` input skips this).
 
 The [Overpass API](https://overpass-api.de/) returns all drivable OpenStreetMap
 (OSM) ways within the radius: `residential`, `unclassified`, `living_street`,
-`tertiary`, `secondary`, `primary`, and `trunk` (excluding service roads,
-tracks, and paths).
+`tertiary`, `secondary`, `primary`, `trunk`, and `motorway` (excluding service
+roads, tracks, and paths).
+
+- **Motorways are in, their ramps are not.** You can't walk or cycle up most
+  interstates, but leaving them out puts a conspicuous blank through the middle
+  of a mountain town's map exactly where one of its longest, steepest grades
+  is: I-40 over Swannanoa Gap at Black Mountain, NC climbs 369 m at 5.4 % and
+  tops that search's longest-incline ranking. A `motorway_link` is steep by
+  design and says nothing about the terrain, so ramps stay out.
+- **Unnamed routes are labelled by their number.** OSM gives a motorway no
+  `name`, only a `ref` — and where routes run concurrently, several of them
+  ("I 40;US 70"). The first is taken as the road's name, which both labels it
+  and keeps its chain whole, since stitching groups by name and the raw tag
+  would sever I-40 where US 70 joins. Rural state routes are unnamed the same
+  way, so they get their number instead of "(unnamed 51640822)".
 
 - **Stitching.** Ways sharing a name and an endpoint are merged into continuous
   roads, but only when travel continues roughly straight through the join

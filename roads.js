@@ -16,8 +16,12 @@ const OVERPASS_ENDPOINTS = [
 const USER_AGENT = 'steepest-roads/1.0 (+https://github.com/xangregg/steepest)';
 
 // Road classes worth ranking. Excludes service (driveways, parking aisles),
-// tracks, and paths.
-const HIGHWAY_RE = 'residential|unclassified|living_street|tertiary|secondary|primary|trunk';
+// tracks, and paths. Motorways are in: you can't walk or cycle up most of them,
+// but leaving the interstate out puts a conspicuous blank through the middle of
+// a mountain town's map where one of its steepest, longest grades actually is —
+// I-40 over Swannanoa Gap at Black Mountain, NC is 7 km at 5.3 %. Their ramps
+// stay out: a link is steep by design and says nothing about the terrain.
+const HIGHWAY_RE = 'residential|unclassified|living_street|tertiary|secondary|primary|trunk|motorway';
 const RANKED_RE = new RegExp(`^(${HIGHWAY_RE})$`);
 
 // A roundabout is a junction, not a road: OSM gives the circle its own way, so
@@ -30,10 +34,12 @@ const ROUNDABOUT_RE = /^(roundabout|circular)$/;
 
 // Decks that are never ranked but still have to be fetched: a ranked road
 // passing under one reads the deck's elevation instead of its own (see
-// markUnderpasses). Motorways and their ramps are the common overpass, and
-// railways are close behind. Asking for the bridge-tagged ways only keeps this
-// to tens of kB beside a multi-megabyte road network.
-const BRIDGE_HIGHWAY_RE = 'motorway|motorway_link|trunk_link|primary_link|secondary_link|tertiary_link|service';
+// markUnderpasses). Ramps are the common overpass, and railways are close
+// behind; the motorways themselves now arrive with the ranked classes, and
+// bridgeWays() reads decks off every element regardless of class. Asking for
+// the bridge-tagged ways only keeps this to tens of kB beside a multi-megabyte
+// road network.
+const BRIDGE_HIGHWAY_RE = 'motorway_link|trunk_link|primary_link|secondary_link|tertiary_link|service';
 // Vehicle- and rail-carrying decks only. A footbridge is too narrow to shift a
 // ~15 m elevation cell, so treating one would linearize real road for nothing;
 // abandoned/disused railways are left out because the structure may be gone.
@@ -144,6 +150,14 @@ out geom;`;
     throw new Error(`Road query failed: ${lastErr?.message ?? 'unknown error'} — the public Overpass servers may be busy; try again in a minute.`);
 }
 
+// A motorway carries no name in OSM, only a route number — and where routes run
+// together, several ("I 40;US 70"). The first is the primary designation, and
+// taking just that both labels the road and keeps its chain intact: stitching
+// groups by name, so using the raw tag would sever I-40 at the point US 70
+// joins it. Rural state routes are unnamed the same way, so this rescues them
+// from "(unnamed 51640822)" too.
+const refName = ref => ref?.split(';')[0].trim() || null;
+
 // Raw Overpass elements -> [{id, name, pts:[{lat,lon}]}], with same-name ways
 // stitched end-to-end (and through roundabouts, which are themselves dropped —
 // a junction is not a road to rank). Bridge/tunnel points are flagged (b): the
@@ -153,16 +167,16 @@ out geom;`;
 export function prepareRoads(elements) {
     const rings = roundaboutNodes(elements);
     const ways = elements
-        // The response also carries unranked decks (motorway, ramp, railway)
-        // fetched only so underpasses can be found — they are not roads to rank,
-        // and neither are roundabout circles.
+        // The response also carries unranked decks (ramp, railway) fetched only
+        // so underpasses can be found — they are not roads to rank, and neither
+        // are roundabout circles.
         .filter(el => el.type === 'way' && el.geometry?.length >= 2 && RANKED_RE.test(el.tags?.highway ?? '')
             && !ROUNDABOUT_RE.test(el.tags?.junction ?? ''))
         .map(el => {
             const b = !!(el.tags?.bridge || el.tags?.tunnel);
             return {
                 id: el.id,
-                name: el.tags?.name ?? null,
+                name: el.tags?.name ?? refName(el.tags?.ref),
                 // TIGER-imported names often drop the street type ("Morehead"
                 // for both Morehead Dr and Hoey Rd); keep the import's own
                 // base/type so stitching can tell such streets apart.

@@ -46,6 +46,37 @@ const bore = prepareRoads([
     way(7, 'Bore St', [[35.002, -77], [35.003, -77]]),
 ]);
 
+// --- Motorways and route numbers -------------------------------------------
+// An interstate is ranked (leaving it out blanks a town's steepest long grade),
+// its ramps are not, and since OSM gives a motorway no name, the route number
+// stands in — including for stitching, which groups by name.
+const numbered = (id, ref, coords, tags = {}) => ({
+    type: 'way', id, tags: { highway: 'motorway', ref, ...tags },
+    geometry: coords.map(([lat, lon]) => ({ lat, lon })),
+});
+const classes = prepareRoads([
+    numbered(400, 'I 40', [[35, -71], [35.001, -71]]),
+    numbered(401, null, [[35, -70], [35.001, -70]], { highway: 'motorway_link' }),
+]);
+assert(classes.length === 1 && classes[0].name === 'I 40',
+    `motorway ranks, its ramp does not (${classes.map(r => r.name).join(', ') || 'nothing ranked'})`);
+// Concurrency: the chain must survive the way where a second route joins, so
+// the first ref is the key. The raw tag would leave two roads.
+const concurrent = prepareRoads([
+    numbered(402, 'I 40', [[35, -72], [35.001, -72]]),
+    numbered(403, 'I 40;US 70', [[35.001, -72], [35.002, -72]]),
+    numbered(404, 'I 40', [[35.002, -72], [35.003, -72]]),
+]);
+assert(concurrent.length === 1 && concurrent[0].name === 'I 40' && concurrent[0].pts.length === 4,
+    `a concurrency doesn't sever the route (${concurrent.length} chains: ${concurrent.map(r => r.name).join(', ')})`);
+// A name always wins over a number, and a way with neither is still unnamed.
+const named = prepareRoads([
+    numbered(405, 'NC 9', [[35, -73], [35.001, -73]], { highway: 'primary', name: 'Broadway' }),
+    { type: 'way', id: 406, tags: { highway: 'residential' }, geometry: [{ lat: 35, lon: -74 }, { lat: 35.001, lon: -74 }] },
+]);
+assert(named.find(r => r.id === 405).name === 'Broadway', 'a real name beats the route number');
+assert(named.find(r => r.id === 406).unnamed === true, 'no name and no ref is still unnamed');
+
 // --- Roundabouts -----------------------------------------------------------
 // A roundabout is a junction, not a road: OSM gives the circle its own way, so
 // the road through it is severed into legs meeting the circle at different
@@ -512,8 +543,10 @@ const eastWest = (id, lat, tags = {}) => ({
     type: 'way', id, tags: { highway: 'residential', name: 'Under St', ...tags },
     geometry: [{ lat, lon: -82.3 }, { lat, lon: -82.29 }],   // ~900 m due east
 });
+// A ramp: fetched as a deck, never ranked. (The motorway it feeds IS ranked, so
+// a motorway deck would be a road here — the ramp keeps this about the deck.)
 const deckOver = (id, lon, tags = {}) => ({
-    type: 'way', id, tags: { highway: 'motorway', bridge: 'yes', layer: '1', ...tags },
+    type: 'way', id, tags: { highway: 'motorway_link', bridge: 'yes', layer: '1', ...tags },
     geometry: [{ lat: 34.998, lon }, { lat: 35.002, lon }],  // crosses north-south
 });
 const underRoad = prepareRoads([eastWest(20, 35)])[0];
@@ -548,8 +581,11 @@ assert(resample(ownDeck.pts).every(s => s.b),
 
 // Fixtures store the same processed-road shape the IndexedDB cache versions,
 // but are read straight off disk, so nothing else would notice one going stale.
-const fixtures = Object.fromEntries(['brevard', 'underpass', 'roundabout'].map(n =>
+const fixtures = Object.fromEntries(['brevard', 'underpass', 'roundabout', 'motorway'].map(n =>
     [n, JSON.parse(readFileSync(new URL(`./fixtures/${n}.json`, import.meta.url), 'utf8'))]));
+// Which captures actually have a road running under a deck. Brevard has decks
+// but nothing passes beneath them; the interstate fixture has neither.
+const hasUnderpasses = new Set(['underpass', 'roundabout']);
 for (const [n, f] of Object.entries(fixtures)) {
     assert(f.version === VERSION_TAG,
         `${n} fixture matches pipeline v${VERSION_TAG}` +
@@ -573,8 +609,8 @@ for (const [n, f] of Object.entries(fixtures)) {
     }
     assert(checked > f.roads.length - 3 && !mismatch,
         `${n}: ${checked} roads re-flagged by a fresh markUnderpasses run, all matching${mismatch ? ` — except ${mismatch}` : ''}`);
-    assert(n === 'brevard' ? flagged === 0 : flagged > 0,
-        `${n}: ${flagged} underpass flags rebuilt from source (${n === 'brevard' ? 'none expected' : 'roads under decks'})`);
+    assert(hasUnderpasses.has(n) ? flagged > 0 : flagged === 0,
+        `${n}: ${flagged} underpass flags rebuilt from source (${hasUnderpasses.has(n) ? 'roads under decks' : 'none expected'})`);
 }
 
 // The real case, from the committed fixture (processed offline, no network):
@@ -666,6 +702,21 @@ assert(segPct(dipSeg) === '-6.8%',
     `fixture: the segment falling inside White Squirrel Ln's incline reads negative (${segPct(dipSeg)})`);
 assert(segPct(squirrelInc.i)?.startsWith('-') === false,
     `fixture: a segment climbing with that incline stays unsigned (${segPct(squirrelInc.i)})`);
+
+// The interstate, from its own fixture: I-40 over Swannanoa Gap, the grade that
+// showed as a blank corridor through Black Mountain while motorways went
+// unfetched. OSM names none of these ways, so without the ref fallback this is
+// a pile of "(unnamed …)" fragments that never stitch.
+const i40 = fixtures.motorway.roads.filter(r => r.name === 'I 40');
+assert(i40.length === 2 && i40.every(r => r.length > 8000),
+    `fixture: I 40 is ranked and stitched, one chain per carriageway ` +
+    `(${fixtures.motorway.roads.map(r => `${r.name} ${(r.length / 1000).toFixed(1)}km`).join(', ')})`);
+assert(!fixtures.motorway.roads.some(r => r.unnamed),
+    'fixture: nothing on the interstate corridor is left unnamed');
+const swannanoa = i40.map(r => longestInclines(r.samples, r.elev, 800)[0]).filter(Boolean)
+    .sort((a, b) => b.span - a.span)[0];
+assert(swannanoa && swannanoa.span > 6000 && swannanoa.grade > 0.05,
+    `fixture: the Swannanoa Gap climb is reported whole (${swannanoa ? `${Math.round(swannanoa.span)} m @ ${(swannanoa.grade * 100).toFixed(1)}%` : 'none'})`);
 
 // Real profiles are noisier than any synthetic one, so hold the rule over every
 // incline in every fixture: none may open or close on a segment running against
